@@ -18,3 +18,10 @@ env/
 *.sqlite3-shm
 
 .DS_Store
+
+# Docker stack (stack/): local compose overrides and database backups.
+docker-compose.override.yml
+/stack/backups/
+*.dump
+*.sql.gz
+*.tar.gz

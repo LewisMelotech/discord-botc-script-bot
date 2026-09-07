@@ -1,0 +1,12 @@
+-- Runs once, only while the Postgres data directory is being initialised, before the
+-- server accepts its first external connection.
+--
+-- The name/author search (scripts/filters.py, scripts/views.py) calls TrigramSimilarity,
+-- which needs pg_trgm. Without it the site boots and browses normally and then returns
+-- 500 the moment anyone types in the search box.
+--
+-- This file only ever runs on an EMPTY data directory, so it does nothing on an existing
+-- `pgdata` volume or a restored backup. Migration scripts/migrations/0048_trigram_extension.py
+-- in the fork covers those cases; both exist so the extension is present before migrations
+-- run on a fresh stack, and repaired by migrate on an old one.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;

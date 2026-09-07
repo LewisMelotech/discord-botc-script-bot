@@ -1,0 +1,167 @@
+# The self-hosted Blood on the Clocktower stack.
+#
+#   db            postgres:17-bookworm, the only stateful service
+#   init          one-shot: migrate -> loaddata characters -> bootstrap accounts
+#   botc-scripts  the Django app (this repo's ./botc-scripts fork, with the slug feature)
+#   bot           the Discord bot, from the sibling ../botc-discord-bot checkout
+#
+# The bot reaches the app at http://botc-scripts:8000 over the user-defined `botc` bridge
+# network, which is what provides service-name DNS. Nothing but the app publishes a port.
+#
+# Copy .env.example to .env before the first `docker compose up`. SECRET_KEY and DBPASS
+# have no defaults on purpose: the stack refuses to start rather than run on a guessable
+# secret that someone committed.
+
+name: botc
+
+x-app-env: &app-env
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Copy .env.example to .env and generate one.}
+  DEBUG: ${DEBUG:-False}
+  # Space-separated ALLOWED_HOSTS. "botc-scripts" MUST stay in the list: it is the Host
+  # header the bot sends over the internal network, and Django answers 400 to any host
+  # that is not listed. Setting DJANGO_HOST at all also selects the storage-backed branch
+  # of views.download_pdf, which is the correct one for FileSystemStorage.
+  DJANGO_HOST: ${DJANGO_HOST:-localhost 127.0.0.1 botc-scripts}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+  BEHIND_TLS_PROXY: ${BEHIND_TLS_PROXY:-False}
+  DBHOST: db
+  DBPORT: "5432"
+  DBNAME: ${POSTGRES_DB:-botc}
+  DBUSER: ${POSTGRES_USER:-botc}
+  DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Copy .env.example to .env and choose one.}
+  UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
+  BANNER: ${BANNER:-}
+  GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+  GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
+  # Consumed only by `manage.py bootstrap`. Blank passwords skip account creation with a
+  # warning rather than inventing a default.
+  DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
+  DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-}
+  DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+  BOTC_API_USERNAME: ${BOTC_API_USERNAME:-discordbot}
+  BOTC_API_EMAIL: ${BOTC_API_EMAIL:-}
+  BOTC_API_PASSWORD: ${BOTC_API_PASSWORD:-}
+  BOOTSTRAP_RESET_PASSWORDS: ${BOOTSTRAP_RESET_PASSWORDS:-False}
+
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-botc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Copy .env.example to .env and choose one.}
+      POSTGRES_DB: ${POSTGRES_DB:-botc}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # First half of the pg_trgm guarantee: this runs before the database accepts its
+      # first real connection, but ONLY on an empty data directory. Migration 0048 in the
+      # fork covers every other case (an existing volume, a restored backup).
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
+    networks: [botc]
+    healthcheck:
+      # -h 127.0.0.1 is load-bearing. During initdb the official entrypoint runs a
+      # temporary server with listen_addresses='', so a plain `pg_isready` reports
+      # "accepting connections" over the unix socket while the database is still
+      # initialising. Only the TCP check tells the truth.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # One-shot, idempotent. A separate service rather than an entrypoint script so that
+  # `depends_on: service_completed_successfully` gives a hard ordering guarantee, so three
+  # gunicorn workers cannot race each other running `migrate`, and so a failure shows up
+  # as a non-zero exit instead of being buried in application logs.
+  init:
+    build:
+      context: ../../botc-scripts
+    image: botc-scripts:local
+    restart: "no"
+    environment: *app-env
+    volumes:
+      - appdata:/data
+    networks: [botc]
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -ceu "
+        python manage.py migrate --noinput &&
+        python manage.py loaddata dev/characters &&
+        python manage.py bootstrap
+      "
+
+  botc-scripts:
+    build:
+      context: ../../botc-scripts
+    image: botc-scripts:local
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - appdata:/data
+    networks: [botc]
+    ports:
+      # Bound to loopback by default: the bot does not need this, only a human browser
+      # does. Set APP_BIND=0.0.0.0 in .env to expose it on the LAN.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      # Neither image ships curl or wget. Note the missing trailing slash: the route is
+      # registered as path("health-check", ...) and /health-check/ is a 404.
+      # This is a liveness check only — views.HealthCheckView never touches the database.
+      # What actually proves the database is usable is `init` having exited 0.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/health-check", timeout=5).status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  bot:
+    build:
+      context: ..
+    image: botc-bot:local
+    # on-failure:3, not unless-stopped: with no DISCORD_TOKEN the bot exits 2 by design,
+    # and this lets it settle at Exited(2) instead of crash-looping forever. The database
+    # and the app are unaffected either way.
+    restart: on-failure:3
+    environment:
+      # Deliberately :- and not :? — the app and database must come up without a token.
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      BOTC_BASE_URL: http://botc-scripts:8000
+      BOTC_CACHE_PATH: /data/botc-suggestions.sqlite3
+      BOTC_CACHE_ENTRIES: ${BOTC_CACHE_ENTRIES:-500}
+      BOTC_RENDER_DPI: ${BOTC_RENDER_DPI:-150}
+      BOTC_MAX_PAGES: ${BOTC_MAX_PAGES:-10}
+      BOTC_HTTP_TIMEOUT: ${BOTC_HTTP_TIMEOUT:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Credentials for the slug-write API. The bot ignores them until the /alias command
+      # lands; they are passed now so the plumbing is already in place.
+      BOTC_API_USER: ${BOTC_API_USERNAME:-discordbot}
+      BOTC_API_PASSWORD: ${BOTC_API_PASSWORD:-}
+    volumes:
+      - botdata:/data
+    networks: [botc]
+    depends_on:
+      botc-scripts:
+        condition: service_healthy
+
+networks:
+  botc:
+    driver: bridge
+
+volumes:
+  pgdata:   # Postgres data directory.
+  appdata:  # /data/public/media (uploaded script PDFs) and /data/icon_cache.
+  botdata:  # The bot's SQLite autocomplete cache and its WAL sidecars.
