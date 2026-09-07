@@ -11,7 +11,7 @@ and the bot from `..`.
 
 ```sh
 git clone https://github.com/LewisMelotech/discord-botc-script-bot.git
-git clone -b custom-slugs https://github.com/LewisMelotech/botc-scripts.git
+git clone -b custom-slugs https://github.com/LewisMelotech/slug-status.git botc-scripts
 cd discord-botc-script-bot/stack
 ```
 
