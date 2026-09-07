@@ -12,6 +12,10 @@
 #   docker compose up -d
 #   docker compose logs -f init   # migrations, characters, accounts; exits 0
 #
+# Published on 8480, not 8000: paperless already holds 8000 on this host. Only the host
+# side moves — the container still listens on 8000, and the bot reaches it at
+# http://botc-scripts:8000 over the internal network, never via the published port.
+#
 # REQUIRED in .env beside this file (or Dockge's environment box):
 #   SECRET_KEY                 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 #   POSTGRES_PASSWORD          python3 -c "import secrets; print(secrets.token_urlsafe(24))"
@@ -112,10 +116,15 @@ services:
       - appdata:/data
     networks: [botc]
     ports:
-      # Loopback by default. A proxy running on the host reaches it here; a proxy in a
-      # container cannot (127.0.0.1 there is itself), so either set APP_BIND=0.0.0.0 or
-      # add the proxy's network below and forward to http://botc-scripts:8000 instead.
-      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+      # 8480 because 8000 is taken by paperless on this host, and 0.0.0.0 because the
+      # proxy (nginx-proxy-manager) is itself a container: 127.0.0.1 in its forward
+      # field would mean the proxy container, not the host. Point NPM at the host's LAN
+      # address on this port, scheme http.
+      #
+      # This publishes on every interface, so anything that can route to the host can
+      # reach the app directly, bypassing the proxy and its TLS. Firewall the port to
+      # the proxy, or drop this block entirely and use the shared-network option below.
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-8480}:8000"
     depends_on:
       db:
         condition: service_healthy
