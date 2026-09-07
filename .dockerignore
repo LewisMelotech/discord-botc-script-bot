@@ -1,0 +1,26 @@
+# The .env in this directory holds a real Discord token. It must never enter the image;
+# the container is configured from Compose environment variables instead.
+.env
+.env.*
+!.env.example
+
+# A host virtualenv would be both huge and built for the wrong platform.
+.venv
+venv
+env
+
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# The autocomplete cache is per-deployment state and lives on a volume.
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+.git
+.DS_Store
+*.log

@@ -1,0 +1,17 @@
+# Interaction.filesize_limit needs discord.py >= 2.6.
+discord.py>=2.7.1,<3.0
+
+aiohttp>=3.14.3,<4.0
+
+# BSD-3-Clause/Apache-2.0 PDF renderer; bundles PDFium, so no system packages.
+pypdfium2>=5.13.0,<6.0
+
+# pypdfium2 does not depend on Pillow, but PdfBitmap.to_pil() requires it.
+pillow>=12.3.0,<13.0
+
+python-dotenv>=1.2.3,<2.0
+
+# Verify TLS against the OS trust store, so self-hosted instances behind a
+# private CA work, and macOS python.org builds without a CA bundle do too.
+truststore>=0.10.0,<1.0
+

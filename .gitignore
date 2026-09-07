@@ -1,0 +1,20 @@
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+.venv/
+venv/
+env/
+
+# The autocomplete suggestion cache (BOTC_CACHE_PATH), and SQLite's WAL sidecars.
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+.DS_Store
