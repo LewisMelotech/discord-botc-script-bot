@@ -1,0 +1,180 @@
+# BotC scripts + Discord bot — standalone deployment stack.
+#
+# Self-contained: nothing is cloned by hand and no file sits beside this one. Both images
+# are built straight from GitHub, so this whole file can be pasted into Dockge (or saved
+# as compose.yaml and run with `docker compose up -d`) on its own.
+#
+# The trade-off against stack/docker-compose.yml, which builds from local checkouts: a
+# rebuild here pulls whatever those branches point at, so local edits are invisible until
+# pushed. That is what you want on a server and not what you want while developing.
+#
+#   docker compose build          # required after any push, or you keep the old image
+#   docker compose up -d
+#   docker compose logs -f init   # migrations, characters, accounts; exits 0
+#
+# REQUIRED in .env beside this file (or Dockge's environment box):
+#   SECRET_KEY                 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
+#   POSTGRES_PASSWORD          python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+#   DJANGO_SUPERUSER_PASSWORD  your /admin login
+#   BOTC_API_PASSWORD          the account the bot writes custom ids as
+#   DISCORD_TOKEN              https://discord.com/developers/applications
+#
+# BEHIND A PROXY, also set:
+#   DJANGO_HOST=scripts.example.com botc-scripts localhost 127.0.0.1
+#   CSRF_TRUSTED_ORIGINS=https://scripts.example.com
+#   BEHIND_TLS_PROXY=True
+#
+# DJANGO_HOST must keep botc-scripts: that is the Host the bot sends over the internal
+# network, and Django answers 400 to anything unlisted. BEHIND_TLS_PROXY marks cookies
+# secure, so set it only when a proxy really is in front or you cannot log in over http.
+
+name: botc
+
+x-app-image: &app-image
+  # Pinned to the branch, not a tag: `docker compose build` re-pulls it each time.
+  build:
+    context: https://github.com/LewisMelotech/slug-status.git#custom-slugs
+  image: botc-scripts:deploy
+
+x-app-env: &app-env
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Generate one and put it in .env.}
+  DEBUG: ${DEBUG:-False}
+  DJANGO_HOST: ${DJANGO_HOST:-localhost 127.0.0.1 botc-scripts}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+  BEHIND_TLS_PROXY: ${BEHIND_TLS_PROXY:-False}
+  DBHOST: db
+  DBPORT: "5432"
+  DBNAME: ${POSTGRES_DB:-botc}
+  DBUSER: ${POSTGRES_USER:-botc}
+  DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Choose one and put it in .env.}
+  UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
+  BANNER: ${BANNER:-}
+  IMPORT_SOURCES: ${IMPORT_SOURCES:-https://www.botcscripts.com}
+  LOCAL_SIGNUP_ENABLED: ${LOCAL_SIGNUP_ENABLED:-True}
+  GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+  GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
+  # Read only by `manage.py bootstrap`. A blank password skips that account with a
+  # warning rather than inventing a guessable default.
+  DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
+  DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-}
+  DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+  BOTC_API_USERNAME: ${BOTC_API_USERNAME:-discordbot}
+  BOTC_API_EMAIL: ${BOTC_API_EMAIL:-}
+  BOTC_API_PASSWORD: ${BOTC_API_PASSWORD:-}
+  BOOTSTRAP_RESET_PASSWORDS: ${BOOTSTRAP_RESET_PASSWORDS:-False}
+
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-botc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Choose one and put it in .env.}
+      POSTGRES_DB: ${POSTGRES_DB:-botc}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [botc]
+    healthcheck:
+      # -h 127.0.0.1 is load-bearing. During initdb the entrypoint runs a temporary
+      # server with listen_addresses='', so a plain pg_isready reports success over the
+      # unix socket while the database is still initialising.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # One-shot and idempotent. A separate service rather than an entrypoint script so
+  # depends_on gives a hard ordering guarantee, three gunicorn workers cannot race each
+  # other running migrate, and a failure surfaces as a non-zero exit.
+  init:
+    <<: *app-image
+    restart: "no"
+    environment: *app-env
+    volumes:
+      - appdata:/data
+    networks: [botc]
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -ceu "
+        python manage.py migrate --noinput &&
+        python manage.py loaddata dev/characters &&
+        python manage.py bootstrap
+      "
+
+  botc-scripts:
+    <<: *app-image
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - appdata:/data
+    networks: [botc]
+    ports:
+      # Loopback by default. A proxy running on the host reaches it here; a proxy in a
+      # container cannot (127.0.0.1 there is itself), so either set APP_BIND=0.0.0.0 or
+      # add the proxy's network below and forward to http://botc-scripts:8000 instead.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      # Neither image ships curl or wget. The missing trailing slash matters: the route
+      # is path("health-check", ...) and /health-check/ is a 404. Liveness only — what
+      # proves the database is usable is init having exited 0.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/health-check", timeout=5).status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  bot:
+    build:
+      context: https://github.com/LewisMelotech/discord-botc-script-bot.git#main
+    image: botc-bot:deploy
+    # on-failure:3 rather than unless-stopped: with no DISCORD_TOKEN the bot exits 2 by
+    # design, and this lets it settle at Exited(2) instead of crash-looping. The database
+    # and site are unaffected either way.
+    restart: on-failure:3
+    environment:
+      # :- not :? — the site must come up with no token.
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      BOTC_BASE_URL: http://botc-scripts:8000
+      BOTC_CACHE_PATH: /data/botc-suggestions.sqlite3
+      BOTC_CACHE_ENTRIES: ${BOTC_CACHE_ENTRIES:-500}
+      BOTC_RENDER_DPI: ${BOTC_RENDER_DPI:-150}
+      BOTC_MAX_PAGES: ${BOTC_MAX_PAGES:-10}
+      BOTC_HTTP_TIMEOUT: ${BOTC_HTTP_TIMEOUT:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      BOTC_API_USER: ${BOTC_API_USERNAME:-discordbot}
+      BOTC_API_PASSWORD: ${BOTC_API_PASSWORD:-}
+    volumes:
+      - botdata:/data
+    networks: [botc]
+    depends_on:
+      botc-scripts:
+        condition: service_healthy
+
+networks:
+  botc:
+    driver: bridge
+  # To let a containerised proxy reach the app by name, uncomment this, add `proxy` to
+  # the botc-scripts service's networks, and forward to http://botc-scripts:8000.
+  # proxy:
+  #   external: true
+  #   name: <your proxy's network>
+
+volumes:
+  pgdata:   # Postgres data directory.
+  appdata:  # /data/public/media (uploaded script PDFs) and /data/icon_cache.
+  botdata:  # The bot's SQLite autocomplete cache and its WAL sidecars.
