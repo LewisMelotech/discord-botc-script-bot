@@ -33,6 +33,7 @@ class Config:
     max_pages: int
     cache_path: str
     cache_entries: int
+    online_only: bool
     log_level: str
     api_user: str | None = None
     api_password: str | None = None
@@ -123,10 +124,25 @@ class Config:
             cache_path=cache_path,
             # Zero disables the suggestion cache and leaves the database file uncreated.
             cache_entries=_int_env("BOTC_CACHE_ENTRIES", 500, minimum=0, maximum=100_000),
+            # Serve only what is marked as on the Minecraft server. Instances without the
+            # status field (the public site) send no status at all, which is treated as
+            # visible so this cannot silently empty the catalogue there.
+            online_only=_bool_env("BOTC_ONLINE_ONLY", True),
             log_level=log_level,
             api_user=api_user,
             api_password=api_password,
         )
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = (os.environ.get(name) or "").strip().lower()
+    if not raw:
+        return default
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError(f"{name} must be true or false, not {raw!r}.")
 
 
 def _int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:

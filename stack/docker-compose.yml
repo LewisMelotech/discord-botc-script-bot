@@ -146,6 +146,10 @@ services:
       BOTC_MAX_PAGES: ${BOTC_MAX_PAGES:-10}
       BOTC_HTTP_TIMEOUT: ${BOTC_HTTP_TIMEOUT:-60}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # true serves only scripts marked as on the Minecraft server. An instance with no
+      # status field (the public site) sends none, which counts as available, so this
+      # cannot empty the catalogue there.
+      BOTC_ONLINE_ONLY: ${BOTC_ONLINE_ONLY:-true}
       # Credentials for the slug-write API. The bot ignores them until the /alias command
       # lands; they are passed now so the plumbing is already in place.
       # The bot requires these both-or-neither, so the username must not default to a

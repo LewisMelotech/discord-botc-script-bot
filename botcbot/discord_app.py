@@ -109,6 +109,7 @@ class ScriptBot(discord.Client):
             base_url=self.config.base_url,
             max_pdf_bytes=self.config.max_pdf_bytes,
             auth=_api_auth(self.config),
+            online_only=self.config.online_only,
         )
 
         self.tree.add_command(script_command)

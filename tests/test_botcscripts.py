@@ -447,3 +447,29 @@ async def test_an_unexpected_status_from_a_write_is_an_upstream_error():
     api, _ = writing_client({"PATCH /api/script_ids/1/slug/": (500, b"<h1>Server Error</h1>")})
     with pytest.raises(UpstreamError):
         await api.set_slug(1, "sects")
+
+
+def test_version_parses_the_server_status():
+    from botcbot.botcscripts import ScriptVersion
+
+    row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0", "status": "online"}
+    assert ScriptVersion.from_api(row).status == "online"
+    assert ScriptVersion.from_api(row).is_offline is False
+
+
+def test_a_missing_status_is_not_treated_as_offline():
+    from botcbot.botcscripts import ScriptVersion
+
+    # The public site has no status field at all. Reading its absence as "offline"
+    # would make the whole catalogue unservable there.
+    row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0"}
+    version = ScriptVersion.from_api(row)
+    assert version.status is None
+    assert version.is_offline is False
+
+
+def test_offline_is_only_the_explicit_value():
+    from botcbot.botcscripts import ScriptVersion
+
+    row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0", "status": "offline"}
+    assert ScriptVersion.from_api(row).is_offline is True

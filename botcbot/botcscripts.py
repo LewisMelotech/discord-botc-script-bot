@@ -144,6 +144,10 @@ class ScriptVersion:
     score: int | None = None
     content: list[Any] | None = None
     slug: str | None = None
+    # "online", "offline", or None on an instance without the field — the public site
+    # never sends it, and None must never read as "offline" or that instance would
+    # appear to hold nothing at all.
+    status: str | None = None
 
     @classmethod
     def from_api(cls, payload: Any) -> ScriptVersion:
@@ -168,11 +172,17 @@ class ScriptVersion:
             score=payload.get("score") if isinstance(payload.get("score"), int) else None,
             content=content if isinstance(content, list) else None,
             slug=_opt_str(payload.get("slug")),
+            status=_opt_str(payload.get("status")),
         )
 
     @property
     def label(self) -> str:
         return f"{self.name} v{self.version}"
+
+    @property
+    def is_offline(self) -> bool:
+        """Known to be off the Minecraft server. Unknown status counts as available."""
+        return self.status == "offline"
 
     @property
     def reference(self) -> str:
@@ -221,11 +231,13 @@ class BotcScriptsClient:
         base_url: str,
         max_pdf_bytes: int = 60 * 1024 * 1024,
         auth: str | None = None,
+        online_only: bool = False,
     ) -> None:
         self._session = session
         self._base_url = base_url.rstrip("/")
         self._max_pdf_bytes = max_pdf_bytes
         self._auth = auth
+        self._online_only = online_only
 
     @property
     def base_url(self) -> str:
@@ -246,9 +258,26 @@ class BotcScriptsClient:
             raise ScriptNotFound(query)
 
         latest = await self._resolve_script(cleaned)
-        if version is None or not version.strip():
-            return latest
-        return await self.fetch_version(latest.script_id, version.strip())
+        resolved = latest
+        if version is not None and version.strip():
+            resolved = await self.fetch_version(latest.script_id, version.strip())
+        self._require_online(resolved)
+        return resolved
+
+    def _require_online(self, script: ScriptVersion) -> None:
+        """Refuse a script that is not on the server, when configured to serve only those.
+
+        Searching already filters server-side, but a numeric id or custom id addresses a
+        version directly and would otherwise walk straight past that filter.
+        """
+        if self._online_only and script.is_offline:
+            raise ScriptNotFound(
+                script.label,
+                message=(
+                    f"**{script.name}** v{script.version} is not on the server yet, "
+                    "so it cannot be served here."
+                ),
+            )
 
     async def search(self, query: str, *, limit: int = 25) -> list[ScriptVersion]:
         """Similarity-ranked name matches, for autocomplete suggestions.
@@ -445,6 +474,10 @@ class BotcScriptsClient:
             "include_homebrew": "true",
             "include_hybrid": "true",
         }
+        if self._online_only:
+            # Filtered server-side so pagination counts what the caller can actually
+            # have, rather than trimming a page after the fact.
+            params["status"] = "online"
         if ordering:
             params["ordering"] = ordering
 

@@ -53,12 +53,14 @@ def build_bot(
     cache_entries: int = 100,
     base_url: str = BASE,
     credentials: tuple[str, str] | None = None,
+    online_only: bool = False,
 ):
     user, password = credentials or (None, None)
     config = Config(
         discord_token="not-used-offline",
         base_url=base_url,
         guild_id=None,
+        online_only=online_only,
         http_timeout=60.0,
         max_pdf_bytes=10 * 1024 * 1024,
         render_dpi=100,
