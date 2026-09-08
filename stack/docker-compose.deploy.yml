@@ -1,16 +1,16 @@
 # BotC scripts + Discord bot — standalone deployment stack.
 #
-# Self-contained: nothing is cloned by hand and no file sits beside this one. Both images
-# are built straight from GitHub, so this whole file can be pasted into Dockge (or saved
-# as compose.yaml and run with `docker compose up -d`) on its own.
+# Self-contained: nothing is cloned, nothing is built here. GitHub Actions builds both
+# images on push and publishes them to GHCR; this host only pulls them. Paste the file
+# into Dockge, or save it as compose.yaml.
 #
-# The trade-off against stack/docker-compose.yml, which builds from local checkouts: a
-# rebuild here pulls whatever those branches point at, so local edits are invisible until
-# pushed. That is what you want on a server and not what you want while developing.
+#   docker compose pull && docker compose up -d
 #
-#   docker compose build          # required after any push, or you keep the old image
-#   docker compose up -d
-#   docker compose logs -f init   # migrations, characters, accounts; exits 0
+# which is exactly what Dockge's Update button does, so that button is all you need.
+# `docker compose logs -f init` shows migrations, characters and accounts; it exits 0.
+#
+# Deploying a change is: push to the branch, wait for Actions to go green, press Update.
+# Nothing compiles on this machine.
 #
 # Published on 8480, not 8000: paperless already holds 8000 on this host. Only the host
 # side moves — the container still listens on 8000, and the bot reaches it at
@@ -35,15 +35,9 @@
 name: botc
 
 x-app-image: &app-image
-  # Pinned to the branch, not a tag: `docker compose build` re-pulls it each time.
-  build:
-    context: https://github.com/LewisMelotech/slug-status.git#custom-slugs
-  image: botc-scripts:deploy
-  # These images exist only on this host, so a registry pull can only fail. Without
-  # this, `docker compose pull` — and Dockge's Update button, which runs it — errors
-  # with "pull access denied ... repository does not exist" and looks like a
-  # permissions problem rather than an image that was never meant to be pulled.
-  pull_policy: build
+  # Published by GitHub Actions on every push to custom-slugs. Pin to a :sha-xxxxxxx tag
+  # instead of :latest to hold a known-good build, or to roll one back.
+  image: ${APP_IMAGE:-ghcr.io/lewismelotech/slug-status:latest}
 
 x-app-env: &app-env
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Generate one and put it in .env.}
@@ -152,10 +146,7 @@ services:
       start_period: 20s
 
   bot:
-    build:
-      context: https://github.com/LewisMelotech/discord-botc-script-bot.git#main
-    image: botc-bot:deploy
-    pull_policy: build
+    image: ${BOT_IMAGE:-ghcr.io/lewismelotech/discord-botc-script-bot:latest}
     # on-failure:3 rather than unless-stopped: with no DISCORD_TOKEN the bot exits 2 by
     # design, and this lets it settle at Exited(2) instead of crash-looping. The database
     # and site are unaffected either way.

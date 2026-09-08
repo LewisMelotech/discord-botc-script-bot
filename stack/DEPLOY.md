@@ -4,19 +4,24 @@ This assumes a Linux host with Docker, a TLS-terminating reverse proxy you alrea
 and a domain pointing at it. The stack itself terminates nothing and publishes no
 certificate — it just serves HTTP on a port your proxy forwards to.
 
-## 1. Get both repos onto the host
+## 1. Get the compose file onto the host
 
-They must be checked out **side by side**: Compose builds the app from `../../botc-scripts`
-and the bot from `..`.
+Use **`docker-compose.deploy.yml`**. It pulls both images from GHCR, published by GitHub
+Actions on every push, so there is nothing to clone and nothing compiles on the server.
+Save it as `compose.yaml` (or paste it into Dockge) and that is the whole deployment.
+
+The images are `ghcr.io/lewismelotech/slug-status` (built from `custom-slugs`) and
+`ghcr.io/lewismelotech/discord-botc-script-bot` (from `main`). Both must be **public**
+packages, or the host needs `docker login ghcr.io` — see "First publish" below.
+
+Cloning the two repos side by side is only needed for `docker-compose.yml`, which builds
+from local checkouts and is meant for development:
 
 ```sh
 git clone https://github.com/LewisMelotech/discord-botc-script-bot.git
 git clone -b custom-slugs https://github.com/LewisMelotech/slug-status.git botc-scripts
 cd discord-botc-script-bot/stack
 ```
-
-The fork must be on `custom-slugs`. That branch carries the slug field, local accounts,
-importing, the server-status field and the container packaging — none of it is upstream.
 
 ## 2. Write the .env
 
@@ -97,15 +102,32 @@ Check it: `curl -H 'Host: scripts.example.com' http://127.0.0.1:8000/health-chec
 - The bot registers slash commands globally, which can take an hour. Set `DISCORD_GUILD_ID`
   for instant registration in one server while you check it works.
 
+## First publish
+
+GHCR packages start **private**. After the first successful Actions run, open each
+package (GitHub → your profile → Packages), Package settings → Change visibility →
+Public. Otherwise the host cannot pull and Dockge reports "denied".
+
+Alternatively keep them private and run `docker login ghcr.io` on the host with a
+personal access token holding `read:packages`.
+
 ## Updating
 
+Push to the branch, wait for Actions to go green, then press **Update** in Dockge — or:
+
 ```sh
-cd botc-scripts && git pull && cd ../discord-botc-script-bot && git pull
-cd stack && docker compose build && docker compose up -d
+docker compose pull && docker compose up -d
 ```
 
-The build is not optional. Skipping it leaves the old image running with none of your
-changes, which looks exactly like the deploy having silently failed.
+`init` re-runs migrations before the app starts, so schema changes apply themselves.
+
+`:latest` follows the branch, so Update always takes the newest build. To hold or roll
+back to a known-good one, pin the sha tag that Actions also publishes:
+
+```sh
+APP_IMAGE=ghcr.io/lewismelotech/slug-status:sha-1a2b3c4
+BOT_IMAGE=ghcr.io/lewismelotech/discord-botc-script-bot:sha-1a2b3c4
+```
 
 ## Backups
 
