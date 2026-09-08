@@ -34,11 +34,9 @@
 
 name: botc
 
-x-app-image: &app-image
-  # Published by GitHub Actions on every push to custom-slugs. Pin to a :sha-xxxxxxx tag
-  # instead of :latest to hold a known-good build, or to roll one back.
-  image: ${APP_IMAGE:-ghcr.io/lewismelotech/slug-status:latest}
-
+# init and botc-scripts must run the SAME image and the SAME environment: init applies
+# the migrations the app then expects, so any drift between them fails in a confusing
+# way. Defined once here and referenced by both, rather than duplicated.
 x-app-env: &app-env
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Generate one and put it in .env.}
   DEBUG: ${DEBUG:-False}
@@ -91,7 +89,7 @@ services:
   # depends_on gives a hard ordering guarantee, three gunicorn workers cannot race each
   # other running migrate, and a failure surfaces as a non-zero exit.
   init:
-    <<: *app-image
+    image: ${APP_IMAGE:-ghcr.io/lewismelotech/slug-status:latest}
     restart: "no"
     environment: *app-env
     volumes:
@@ -108,7 +106,9 @@ services:
       "
 
   botc-scripts:
-    <<: *app-image
+    # Published by GitHub Actions on every push to custom-slugs. Set APP_IMAGE to a
+    # :sha-xxxxxxx tag to hold a known-good build, or to roll one back.
+    image: ${APP_IMAGE:-ghcr.io/lewismelotech/slug-status:latest}
     restart: unless-stopped
     environment: *app-env
     volumes:
