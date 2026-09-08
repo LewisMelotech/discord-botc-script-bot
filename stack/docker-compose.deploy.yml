@@ -165,7 +165,11 @@ services:
       BOTC_MAX_PAGES: ${BOTC_MAX_PAGES:-10}
       BOTC_HTTP_TIMEOUT: ${BOTC_HTTP_TIMEOUT:-60}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      BOTC_API_USER: ${BOTC_API_USERNAME:-discordbot}
+      # The bot requires these both-or-neither, so the username must not default to a
+      # value while the password is empty: that is half a credential, and the bot exits 2
+      # rather than starting up unable to write. :+ makes the username appear only when a
+      # password is actually set.
+      BOTC_API_USER: ${BOTC_API_PASSWORD:+${BOTC_API_USERNAME:-discordbot}}
       BOTC_API_PASSWORD: ${BOTC_API_PASSWORD:-}
     volumes:
       - botdata:/data
