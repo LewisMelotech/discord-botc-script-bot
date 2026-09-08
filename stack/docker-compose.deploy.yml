@@ -39,6 +39,11 @@ x-app-image: &app-image
   build:
     context: https://github.com/LewisMelotech/slug-status.git#custom-slugs
   image: botc-scripts:deploy
+  # These images exist only on this host, so a registry pull can only fail. Without
+  # this, `docker compose pull` — and Dockge's Update button, which runs it — errors
+  # with "pull access denied ... repository does not exist" and looks like a
+  # permissions problem rather than an image that was never meant to be pulled.
+  pull_policy: build
 
 x-app-env: &app-env
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set. Generate one and put it in .env.}
@@ -150,6 +155,7 @@ services:
     build:
       context: https://github.com/LewisMelotech/discord-botc-script-bot.git#main
     image: botc-bot:deploy
+    pull_policy: build
     # on-failure:3 rather than unless-stopped: with no DISCORD_TOKEN the bot exits 2 by
     # design, and this lets it settle at Exited(2) instead of crash-looping. The database
     # and site are unaffected either way.
