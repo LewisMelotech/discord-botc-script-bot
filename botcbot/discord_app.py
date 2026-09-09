@@ -127,8 +127,16 @@ class ScriptBot(discord.Client):
             guild = discord.Object(id=self.config.guild_id)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
+            # A previous run without DISCORD_GUILD_ID registers the same commands
+            # globally, and Discord keeps them until told otherwise — so every command
+            # then appears twice in the picker. Clearing the global set after the guild
+            # copy removes the duplicates and keeps them from coming back.
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
             _LOGGER.info(
-                "Commands synced to guild %s (available immediately).", self.config.guild_id
+                "Commands synced to guild %s (available immediately); "
+                "any global registration from an earlier run has been cleared.",
+                self.config.guild_id,
             )
         else:
             await self.tree.sync()
@@ -220,9 +228,7 @@ async def _suggestions(
     choices: dict[int, app_commands.Choice[str]] = {}
 
     for entry in await _cached_suggestions(bot.cache, text, interaction.guild_id):
-        choices[entry.script_id] = _choice(
-            entry.script_id, entry.name, entry.author, entry.slug
-        )
+        choices[entry.script_id] = _choice(entry.script_id, entry.name, entry.author, entry.slug)
 
     if text and bot.api is not None and len(choices) < MAX_CHOICES:
         for found in await _live_suggestions(bot.api, text):
@@ -407,9 +413,7 @@ async def alias_show(interaction: discord.Interaction, query: str) -> None:
     await _serve_alias(interaction, query=query, writing=False, act=_report_custom_id)
 
 
-async def _apply_custom_id(
-    bot: ScriptBot, script: ScriptVersion, *, custom_id: str | None
-) -> str:
+async def _apply_custom_id(bot: ScriptBot, script: ScriptVersion, *, custom_id: str | None) -> str:
     """Set or clear the custom id, and say what changed.
 
     The clear is sent even when the resolved script appears to have no custom id: the
@@ -607,9 +611,7 @@ async def _serve(
     await _remember(bot, interaction, script)
 
 
-async def _deliver(
-    interaction: discord.Interaction, reply: _Reply, delivery: _Delivery
-) -> bool:
+async def _deliver(interaction: discord.Interaction, reply: _Reply, delivery: _Delivery) -> bool:
     """Send the header and every attachment, ten files at a time."""
     chunks = [
         delivery.attachments[start : start + MAX_ATTACHMENTS_PER_MESSAGE]
@@ -730,9 +732,7 @@ async def _remember(
             slug=script.slug,
         )
     except Exception:
-        _LOGGER.warning(
-            "Could not record %s in the suggestion cache.", script.label, exc_info=True
-        )
+        _LOGGER.warning("Could not record %s in the suggestion cache.", script.label, exc_info=True)
 
 
 def _work_budget(interaction: discord.Interaction) -> float:
@@ -771,9 +771,7 @@ def _title_lines(script: ScriptVersion, base_url: str) -> list[str]:
     ]
 
 
-def _pdf_header(
-    script: ScriptVersion, base_url: str, render: RenderResult, max_pages: int
-) -> str:
+def _pdf_header(script: ScriptVersion, base_url: str, render: RenderResult, max_pages: int) -> str:
     lines = _title_lines(script, base_url)
     if render.omitted_pages:
         # Pages are only ever dropped for one of two reasons: the upload budget ran out

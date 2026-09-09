@@ -98,9 +98,7 @@ async def test_script_posts_the_rendered_pages_and_no_json_file(tmp_path):
 
     await script_command.callback(interaction, "Sects and Violets")
 
-    assert [message.filenames for message in interaction.sent] == [
-        ["page_001.png", "page_002.png"]
-    ]
+    assert [message.filenames for message in interaction.sent] == [["page_001.png", "page_002.png"]]
     assert "Sects and Violets" in (interaction.sent[0].content or "")
     bot.cache.close()
 
@@ -163,9 +161,7 @@ async def test_the_output_parameter_overrides_each_command_default(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ephemeral", [True, False])
-async def test_every_message_of_a_multi_part_reply_keeps_the_chosen_visibility(
-    tmp_path, ephemeral
-):
+async def test_every_message_of_a_multi_part_reply_keeps_the_chosen_visibility(tmp_path, ephemeral):
     # A followup never inherits ephemerality: pages 11+ would go public by default.
     bot, _ = build_bot(tmp_path, {})
     interaction = FakeInteraction(bot)
@@ -327,9 +323,7 @@ async def test_autocomplete_returns_nothing_when_both_sources_fail(tmp_path):
     bot, _ = build_bot(tmp_path, {"/api/scripts/": (200, b"<html>maintenance</html>")})
     # A directory is not a database: every cache call raises.
     bot.cache = ScriptCache(tmp_path)
-    interaction = FakeInteraction(
-        bot, interaction_type=discord.InteractionType.autocomplete
-    )
+    interaction = FakeInteraction(bot, interaction_type=discord.InteractionType.autocomplete)
 
     assert await script_query_autocomplete(interaction, "trouble") == []
 
@@ -341,9 +335,7 @@ async def test_autocomplete_stays_inside_discords_choice_and_name_limits(tmp_pat
         for i in range(1, 41)
     ]
     bot, _ = build_bot(tmp_path, {"/api/scripts/": page(rows)})
-    interaction = FakeInteraction(
-        bot, interaction_type=discord.InteractionType.autocomplete
-    )
+    interaction = FakeInteraction(bot, interaction_type=discord.InteractionType.autocomplete)
 
     choices = await script_query_autocomplete(interaction, "sects")
 
@@ -359,9 +351,7 @@ async def test_autocomplete_with_no_text_offers_the_most_recent_scripts(tmp_path
     bot, session = build_bot(tmp_path, {"/api/scripts/": page([])})
     bot.cache.record(script_id=1, name="Older", used_at=1.0)
     bot.cache.record(script_id=2, name="Newer", used_at=2.0)
-    interaction = FakeInteraction(
-        bot, interaction_type=discord.InteractionType.autocomplete
-    )
+    interaction = FakeInteraction(bot, interaction_type=discord.InteractionType.autocomplete)
 
     choices = await script_query_autocomplete(interaction, "")
 
@@ -373,9 +363,7 @@ async def test_autocomplete_with_no_text_offers_the_most_recent_scripts(tmp_path
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ephemeral", [True, False])
-async def test_the_error_handler_matches_the_visibility_the_invocation_chose(
-    tmp_path, ephemeral
-):
+async def test_the_error_handler_matches_the_visibility_the_invocation_chose(tmp_path, ephemeral):
     bot, _ = build_bot(tmp_path, {})
     interaction = FakeInteraction(bot, command_name="script")
     interaction.extras["ephemeral"] = ephemeral
@@ -404,9 +392,7 @@ async def test_a_failure_before_the_defer_is_reported_privately(tmp_path):
 @pytest.mark.asyncio
 async def test_the_error_handler_never_tries_to_reply_to_an_autocomplete_interaction(tmp_path):
     bot, _ = build_bot(tmp_path, {})
-    interaction = FakeInteraction(
-        bot, interaction_type=discord.InteractionType.autocomplete
-    )
+    interaction = FakeInteraction(bot, interaction_type=discord.InteractionType.autocomplete)
 
     await _on_command_error(interaction, app_commands.AppCommandError("boom"))
 
@@ -442,9 +428,7 @@ def custom_id_routes(*, pdf: bytes | None = None) -> dict:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("command", "name"), [(script_command, "script"), (json_command, "json")]
-)
+@pytest.mark.parametrize(("command", "name"), [(script_command, "script"), (json_command, "json")])
 async def test_both_commands_take_a_custom_id_exactly_as_they_take_a_numeric_id(
     tmp_path, command, name
 ):
@@ -478,9 +462,7 @@ async def test_autocomplete_offers_a_custom_id_as_the_value_and_shows_it_in_the_
     # submits its canonical id, and both resolve exactly.
     live = page([version_row(pk=9, script_id=900, name="Trouble Abroad", author=None)])
     bot, _ = build_bot(tmp_path, {"/api/scripts/": live})
-    bot.cache.record(
-        script_id=13108, name="Trouble Brewing", author="TPI", guild_id=42, slug="tb"
-    )
+    bot.cache.record(script_id=13108, name="Trouble Brewing", author="TPI", guild_id=42, slug="tb")
     interaction = FakeInteraction(
         bot, guild_id=42, interaction_type=discord.InteractionType.autocomplete
     )
@@ -738,3 +720,44 @@ async def test_alias_reuses_the_ambiguous_and_not_found_messages_the_others_use(
     assert "`/alias set`" in content
     assert "`135`" in content and "`4665`" in content
     bot.cache.close()
+
+
+def test_a_guild_sync_also_clears_the_global_commands(tmp_path):
+    """Regression: commands appeared twice in Discord's picker.
+
+    A run without DISCORD_GUILD_ID registers globally, and Discord keeps that set until
+    told otherwise, so adding a guild id later left both registrations live.
+    """
+    import asyncio
+
+    calls: list[str] = []
+
+    class StubTree:
+        def add_command(self, *_args, **_kwargs):
+            pass
+
+        def error(self, handler):
+            return handler
+
+        def copy_global_to(self, *, guild):
+            calls.append(f"copy_global_to({guild.id})")
+
+        def clear_commands(self, *, guild):
+            calls.append(f"clear_commands(guild={guild})")
+
+        async def sync(self, *, guild=None):
+            calls.append(f"sync(guild={guild.id if guild else None})")
+
+    from dataclasses import replace
+
+    bot, _session = build_bot(tmp_path, {})
+    bot.config = replace(bot.config, guild_id=42)
+    bot.tree = StubTree()
+
+    asyncio.run(bot.setup_hook())
+
+    assert "copy_global_to(42)" in calls
+    assert "sync(guild=42)" in calls
+    # The global set is emptied and pushed, in that order and after the guild copy.
+    assert calls.index("clear_commands(guild=None)") > calls.index("copy_global_to(42)")
+    assert calls.index("sync(guild=None)") > calls.index("clear_commands(guild=None)")
