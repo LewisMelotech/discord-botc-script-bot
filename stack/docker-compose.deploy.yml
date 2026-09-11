@@ -179,6 +179,36 @@ services:
       botc-scripts:
         condition: service_healthy
 
+  # Pulls new versions of linked scripts from wherever they were imported from. Runs on
+  # the hour: it sleeps to the next boundary rather than counting from container start,
+  # so a restart does not shift the schedule. Sync only ever ADDS versions, and new ones
+  # arrive offline, so this never changes what the bot serves without a human marking it.
+  sync:
+    image: ${APP_IMAGE:-ghcr.io/lewismelotech/slug-status:latest}
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      SYNC_PERIOD: ${SYNC_PERIOD:-3600}
+    volumes:
+      - appdata:/data
+    networks: [botc]
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    # SYNC_PERIOD is seconds; 3600 means hourly on the hour. A failure is logged and the
+    # loop continues — someone else's server being down should not stop the schedule.
+    command: >
+      sh -ceu '
+        period=$${SYNC_PERIOD:-3600}
+        echo "upstream sync every $${period}s, aligned to the period boundary"
+        while true; do
+          sleep $$(( period - ($$(date +%s) % period) ))
+          python manage.py sync_upstream || echo "sync failed; retrying next period"
+        done
+      '
+
 networks:
   botc:
     driver: bridge
