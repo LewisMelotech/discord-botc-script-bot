@@ -65,16 +65,16 @@ def test_from_api_rejects_a_payload_missing_required_keys():
 def test_from_api_reads_the_custom_id_and_tolerates_its_absence():
     # The fork sends null when a script has no custom id; the public site, which has no
     # such field, omits the key entirely. Both must read back as None.
-    row = version_row(pk=1, script_id=2, name="X")
-    named = ScriptVersion.from_api(version_row(pk=1, script_id=2, name="X", slug="sects"))
+    row = version_row(pk=1, script_id=2, name="Xylo Phone")
+    named = ScriptVersion.from_api(version_row(pk=1, script_id=2, name="Xylo Phone", slug="sects"))
     absent = ScriptVersion.from_api({k: v for k, v in row.items() if k != "slug"})
 
     assert (named.slug, ScriptVersion.from_api(row).slug, absent.slug) == ("sects", None, None)
 
 
 def test_the_reference_and_the_page_link_prefer_the_custom_id_over_the_number():
-    plain = ScriptVersion.from_api(version_row(pk=1, script_id=13108, name="X"))
-    named = ScriptVersion.from_api(version_row(pk=1, script_id=13108, name="X", slug="sects"))
+    plain = ScriptVersion.from_api(version_row(pk=1, script_id=13108, name="Xylo Phone"))
+    named = ScriptVersion.from_api(version_row(pk=1, script_id=13108, name="Xylo Phone", slug="sects"))
 
     assert (plain.reference, named.reference) == ("13108", "sects")
     assert named.web_url(BASE) == f"{BASE}/script/sects/1.0.0"
@@ -137,8 +137,8 @@ async def test_no_match_falls_back_to_the_unbounded_search_for_suggestions():
 
 @pytest.mark.asyncio
 async def test_search_asks_for_homebrew_and_hybrid_which_are_excluded_by_default():
-    api, session = client({"/api/scripts/": page([version_row(pk=1, script_id=9, name="X")])})
-    await api.resolve("X")
+    api, session = client({"/api/scripts/": page([version_row(pk=1, script_id=9, name="Xylo Phone")])})
+    await api.resolve("Xylo Phone")
     assert "include_homebrew=true" in session.requests[0]
     assert "include_hybrid=true" in session.requests[0]
 
@@ -204,7 +204,7 @@ async def test_an_integer_like_query_is_never_looked_up_as_a_custom_id(query):
     # than an error, and only once the instance has grown that far. int() rather than
     # str.isdigit() because int() is the wider net: it also takes a sign, surrounding
     # whitespace and underscores.
-    api, session = client({"/api/scripts/": page([version_row(pk=1, script_id=9, name="X")])})
+    api, session = client({"/api/scripts/": page([version_row(pk=1, script_id=9, name="Xylo Phone")])})
 
     assert (await api.resolve(query)).script_id == 9
 
@@ -251,12 +251,12 @@ async def test_an_unknown_version_lists_the_ones_that_do_exist():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("version", ["../../etc/passwd", "latest", "1.0.0/../..", ""])
 async def test_a_version_that_is_not_a_version_never_reaches_a_url(version):
-    api, session = client({"/api/scripts/": page([version_row(pk=1, script_id=77, name="X")])})
+    api, session = client({"/api/scripts/": page([version_row(pk=1, script_id=77, name="Xylo Phone")])})
     if version == "":
-        assert (await api.resolve("X", version)).script_id == 77
+        assert (await api.resolve("Xylo Phone", version)).script_id == 77
         return
     with pytest.raises(InvalidVersion):
-        await api.resolve("X", version)
+        await api.resolve("Xylo Phone", version)
     assert not any("script_ids" in request for request in session.requests)
 
 
@@ -266,11 +266,11 @@ async def test_upstream_version_urls_are_rebound_to_the_configured_base_url():
         {
             "/api/script_ids/77/": {
                 "pk": 77,
-                "name": "X",
+                "name": "Xylo Phone",
                 "versions": {},
                 "latest_version": "https://evil.example/api/scripts/84/",
             },
-            "/api/scripts/84/": version_row(pk=84, script_id=77, name="X"),
+            "/api/scripts/84/": version_row(pk=84, script_id=77, name="Xylo Phone"),
         }
     )
     assert (await api.resolve("77")).version_pk == 84
@@ -279,9 +279,9 @@ async def test_upstream_version_urls_are_rebound_to_the_configured_base_url():
 
 @pytest.mark.asyncio
 async def test_json_comes_from_the_inline_content_without_a_second_request():
-    rows = [version_row(pk=1, script_id=77, name="X", content=[{"id": "imp"}, {"id": "sailor"}])]
+    rows = [version_row(pk=1, script_id=77, name="Xylo Phone", content=[{"id": "imp"}, {"id": "sailor"}])]
     api, session = client({"/api/scripts/": page(rows)})
-    script = await api.resolve("X")
+    script = await api.resolve("Xylo Phone")
     payload = await api.fetch_script_json(script)
     assert json.loads(payload) == [{"id": "imp"}, {"id": "sailor"}]
     assert len(session.requests) == 1
@@ -289,14 +289,14 @@ async def test_json_comes_from_the_inline_content_without_a_second_request():
 
 @pytest.mark.asyncio
 async def test_json_falls_back_to_the_dedicated_endpoint_when_content_is_absent():
-    script = ScriptVersion(version_pk=22755, script_id=13108, name="X", version="1.0.0")
+    script = ScriptVersion(version_pk=22755, script_id=13108, name="Xylo Phone", version="1.0.0")
     api, _ = client({"/api/scripts/22755/json/": [{"id": "imp"}]})
     assert json.loads(await api.fetch_script_json(script)) == [{"id": "imp"}]
 
 
 @pytest.mark.asyncio
 async def test_pdf_download_returns_the_bytes():
-    script = ScriptVersion(version_pk=1, script_id=77, name="X", version="4.0.0")
+    script = ScriptVersion(version_pk=1, script_id=77, name="Xylo Phone", version="4.0.0")
     api, session = client({"/script/77/4.0.0/download_pdf": (200, PDF_BYTES)})
     assert await api.fetch_pdf(script) == PDF_BYTES
     assert session.requests == ["/script/77/4.0.0/download_pdf"]
@@ -306,7 +306,7 @@ async def test_pdf_download_returns_the_bytes():
 @pytest.mark.parametrize("status", [404, 500])
 async def test_a_missing_pdf_is_reported_as_unavailable_not_as_an_outage(status):
     # botc-scripts answers 500 with an HTML error page when a version has no PDF.
-    script = ScriptVersion(version_pk=1, script_id=77, name="X", version="4.0.0")
+    script = ScriptVersion(version_pk=1, script_id=77, name="Xylo Phone", version="4.0.0")
     api, _ = client({"/script/77/4.0.0/download_pdf": (status, b"<h1>Server Error (500)</h1>")})
     with pytest.raises(PdfUnavailable):
         await api.fetch_pdf(script)
@@ -314,7 +314,7 @@ async def test_a_missing_pdf_is_reported_as_unavailable_not_as_an_outage(status)
 
 @pytest.mark.asyncio
 async def test_a_body_without_the_pdf_magic_number_is_rejected():
-    script = ScriptVersion(version_pk=1, script_id=77, name="X", version="4.0.0")
+    script = ScriptVersion(version_pk=1, script_id=77, name="Xylo Phone", version="4.0.0")
     api, _ = client({"/script/77/4.0.0/download_pdf": (200, b"<html>login page</html>")})
     with pytest.raises(PdfUnavailable):
         await api.fetch_pdf(script)
@@ -322,7 +322,7 @@ async def test_a_body_without_the_pdf_magic_number_is_rejected():
 
 @pytest.mark.asyncio
 async def test_an_oversized_pdf_is_refused_rather_than_buffered():
-    script = ScriptVersion(version_pk=1, script_id=77, name="X", version="4.0.0")
+    script = ScriptVersion(version_pk=1, script_id=77, name="Xylo Phone", version="4.0.0")
     session = FakeSession({"/script/77/4.0.0/download_pdf": (200, b"%PDF-" + b"x" * 10_000)})
     api = BotcScriptsClient(session, base_url=BASE, max_pdf_bytes=1_000)
     with pytest.raises(PdfUnavailable, match="limit"):
@@ -380,7 +380,7 @@ async def test_setting_a_custom_id_patches_the_slug_route_with_basic_auth():
 async def test_clearing_a_custom_id_sends_an_explicit_null_rather_than_an_empty_body():
     # The fork treats a missing slug key as a 400 rather than a silent no-op.
     api, session = writing_client(
-        {"PATCH /api/script_ids/13108/slug/": {"pk": 13108, "name": "X", "slug": None}}
+        {"PATCH /api/script_ids/13108/slug/": {"pk": 13108, "name": "Xylo Phone", "slug": None}}
     )
 
     assert (await api.set_slug(13108, None)).slug is None
@@ -452,7 +452,7 @@ async def test_an_unexpected_status_from_a_write_is_an_upstream_error():
 def test_version_parses_the_server_status():
     from botcbot.botcscripts import ScriptVersion
 
-    row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0", "status": "online"}
+    row = {"pk": 1, "script_id": 2, "name": "Xylo Phone", "version": "1.0.0", "status": "online"}
     assert ScriptVersion.from_api(row).status == "online"
     assert ScriptVersion.from_api(row).is_offline is False
 
@@ -462,7 +462,7 @@ def test_a_missing_status_is_not_treated_as_offline():
 
     # The public site has no status field at all. Reading its absence as "offline"
     # would make the whole catalogue unservable there.
-    row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0"}
+    row = {"pk": 1, "script_id": 2, "name": "Xylo Phone", "version": "1.0.0"}
     version = ScriptVersion.from_api(row)
     assert version.status is None
     assert version.is_offline is False
@@ -471,7 +471,7 @@ def test_a_missing_status_is_not_treated_as_offline():
 def test_offline_is_only_the_explicit_value():
     from botcbot.botcscripts import ScriptVersion
 
-    row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0", "status": "offline"}
+    row = {"pk": 1, "script_id": 2, "name": "Xylo Phone", "version": "1.0.0", "status": "offline"}
     assert ScriptVersion.from_api(row).is_offline is True
 
 
@@ -502,3 +502,16 @@ def test_resolution_prefers_the_online_version():
     lookup = inspect.getsource(BotcScriptsClient._online_version_for)
     assert '"script"' in lookup and '"status": "online"' in lookup
     assert '"all_scripts": "true"' in lookup
+
+
+def test_a_one_character_query_is_treated_as_a_custom_id():
+    """The fork allows single-character ids, so the bot must recognise them.
+
+    With a higher minimum here than the server's, an id like "x" is not recognised as
+    one and falls through to a fuzzy name search — which answers with whatever script
+    the trigram happens to like, rather than the one that id names.
+    """
+    from botcbot.slugs import MIN_SLUG_LENGTH, is_slug
+
+    assert MIN_SLUG_LENGTH == 1
+    assert is_slug("x") is True

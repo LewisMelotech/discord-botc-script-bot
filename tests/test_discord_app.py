@@ -566,7 +566,7 @@ async def test_alias_set_writes_the_custom_id_and_answers_privately(tmp_path):
         ("-12", "reserved for script ids"),
         ("Sects and Violets", "not a valid custom id"),
         ("double--hyphen", "not a valid custom id"),
-        ("a", "at least 2 characters"),
+        ("", "cannot be empty"),
     ],
 )
 async def test_alias_set_answers_a_malformed_custom_id_without_spending_a_request(

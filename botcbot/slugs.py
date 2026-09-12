@@ -16,9 +16,12 @@ from __future__ import annotations
 import re
 from typing import Final
 
-# ``Script.slug`` is a ``SlugField(max_length=50)`` on the fork, and two characters is
-# the shortest id worth typing instead of a number.
-MIN_SLUG_LENGTH: Final = 2
+# Must match the fork's scripts/constants.py. A single character is a valid id there —
+# "x" is unambiguous, and what keeps ids and script ids apart is the integer rule below,
+# not the length. If this is higher than the server's, a short id is not recognised as
+# one here and silently falls through to a fuzzy name search, which answers with the
+# wrong script rather than an error.
+MIN_SLUG_LENGTH: Final = 1
 MAX_SLUG_LENGTH: Final = 50
 
 # Lowercase ASCII letters and digits, separated by single hyphens: no leading or
