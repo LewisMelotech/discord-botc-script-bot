@@ -248,7 +248,18 @@ class BotcScriptsClient:
         return self._auth is not None
 
     async def resolve(self, query: str, version: str | None = None) -> ScriptVersion:
-        """Turn a name, custom id or numeric id (plus optional version) into one version.
+        """Turn a name, custom id or numeric id (plus a version choice) into one version.
+
+        ``version`` selects which one:
+
+        * unset or ``"online"`` — the version on the Minecraft server, and nothing else.
+          The default, and the only mode that refuses a script for being offline.
+        * ``"latest"`` — the newest version held here, deployed or not.
+        * a version number such as ``"1.2.0"`` — exactly that one, deployed or not.
+
+        Asking for a specific version is an explicit request, so it is answered even
+        when that version is not the deployed one. Filtering to what is on the server is
+        a default, not a restriction on someone who names what they want.
 
         Raises :class:`ScriptNotFound`, :class:`AmbiguousScript`,
         :class:`InvalidVersion` or :class:`UpstreamError`.
@@ -257,12 +268,18 @@ class BotcScriptsClient:
         if not cleaned:
             raise ScriptNotFound(query)
 
-        latest = await self._resolve_script(cleaned)
-        resolved = latest
-        if version is not None and version.strip():
-            resolved = await self.fetch_version(latest.script_id, version.strip())
-        self._require_online(resolved)
-        return resolved
+        wanted = (version or "").strip()
+        folded = wanted.casefold()
+        online_wanted = not wanted or folded == "online"
+
+        script = await self._resolve_script(cleaned, prefer_online=online_wanted)
+        if not wanted or folded in ("online", "latest"):
+            if online_wanted:
+                self._require_online(script)
+            return script
+
+        # A named version: fetched directly, and never refused for being offline.
+        return await self.fetch_version(script.script_id, wanted)
 
     def _require_online(self, script: ScriptVersion) -> None:
         """Refuse a script that is not on the server, when configured to serve only those.
@@ -373,12 +390,12 @@ class BotcScriptsClient:
             raise PdfUnavailable("the upstream response was not a PDF")
         return data
 
-    async def _resolve_script(self, query: str) -> ScriptVersion:
+    async def _resolve_script(self, query: str, *, prefer_online: bool = True) -> ScriptVersion:
         # isascii() matters: str.isdigit() is also true for superscripts, which int()
         # cannot parse at all, and for other digit systems, which parse to a number the
         # user never typed. Both must go to the name search instead.
         if query.isascii() and query.isdigit():
-            found = await self._latest_for_script_id(int(query))
+            found = await self._latest_for_script_id(int(query), prefer_online=prefer_online)
             if found is not None:
                 return found
             # Fall through: a script may legitimately be *named* something numeric.
@@ -389,24 +406,32 @@ class BotcScriptsClient:
         # this 404s and costs one request before the name search below.
         folded = normalise_slug(query)
         if is_slug(folded):
-            found = await self._latest_for_slug(folded)
+            found = await self._latest_for_slug(folded, prefer_online=prefer_online)
             if found is not None:
                 return found
             # Fall through: a script may legitimately be *named* like a custom id.
 
-        return await self._resolve_by_name(query)
+        return await self._resolve_by_name(query, prefer_online=prefer_online)
 
-    async def _latest_for_script_id(self, script_id: int) -> ScriptVersion | None:
+    async def _latest_for_script_id(
+        self, script_id: int, *, prefer_online: bool = True
+    ) -> ScriptVersion | None:
         return await self._latest_from_detail(
-            await self._get_json(f"/api/script_ids/{script_id}/", {"format": "json"})
+            await self._get_json(f"/api/script_ids/{script_id}/", {"format": "json"}),
+            prefer_online=prefer_online,
         )
 
-    async def _latest_for_slug(self, slug: str) -> ScriptVersion | None:
+    async def _latest_for_slug(
+        self, slug: str, *, prefer_online: bool = True
+    ) -> ScriptVersion | None:
         return await self._latest_from_detail(
-            await self._get_json(f"/api/script_ids/slug/{quote(slug)}/", {"format": "json"})
+            await self._get_json(f"/api/script_ids/slug/{quote(slug)}/", {"format": "json"}),
+            prefer_online=prefer_online,
         )
 
-    async def _latest_from_detail(self, detail: Any | None) -> ScriptVersion | None:
+    async def _latest_from_detail(
+        self, detail: Any | None, *, prefer_online: bool = True
+    ) -> ScriptVersion | None:
         """Follow a script detail body to the version to serve. ``None`` means 404.
 
         Normally that is the latest version. When only online scripts are served it is
@@ -417,7 +442,7 @@ class BotcScriptsClient:
             return None
         if not isinstance(detail, dict):
             raise UpstreamError(f"{self._base_url} did not return a script object.")
-        if self._online_only:
+        if self._online_only and prefer_online:
             online = await self._online_version_for(detail.get("pk"))
             if online is not None:
                 return online
@@ -462,10 +487,10 @@ class BotcScriptsClient:
         )
         return ScriptInfo.from_api(payload)
 
-    async def _resolve_by_name(self, query: str) -> ScriptVersion:
+    async def _resolve_by_name(self, query: str, *, prefer_online: bool = True) -> ScriptVersion:
         # ordering= raises the trigram threshold to 0.3, which is what makes this a
         # usable candidate set rather than a third of the site.
-        candidates = await self._search(query, ordering="-score")
+        candidates = await self._search(query, ordering="-score", prefer_online=prefer_online)
 
         folded = query.casefold()
         exact = [c for c in candidates if c.name.casefold() == folded]
@@ -479,7 +504,7 @@ class BotcScriptsClient:
         # set: "Brew Troubling" is row 67 of 170 for its own name. The unordered search
         # is the similarity-ranked one and puts an exact name first, so ask it before
         # concluding the name is ambiguous or missing.
-        loose = await self._search(query, ordering=None)
+        loose = await self._search(query, ordering=None, prefer_online=prefer_online)
         loose_exact = [c for c in loose if c.name.casefold() == folded]
         if len(loose_exact) == 1:
             return loose_exact[0]
@@ -498,14 +523,16 @@ class BotcScriptsClient:
         # so its head makes a reasonable "did you mean".
         raise ScriptNotFound(query, loose[:MAX_SUGGESTIONS])
 
-    async def _search(self, query: str, *, ordering: str | None) -> list[ScriptVersion]:
+    async def _search(
+        self, query: str, *, ordering: str | None, prefer_online: bool = True
+    ) -> list[ScriptVersion]:
         params: dict[str, str] = {
             "format": "json",
             "search": query,
             "include_homebrew": "true",
             "include_hybrid": "true",
         }
-        if self._online_only:
+        if self._online_only and prefer_online:
             # Filtered server-side so pagination counts what the caller can actually
             # have, rather than trimming a page after the fact. all_scripts is needed
             # too: the API returns only latest versions by default, and the deployed

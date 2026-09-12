@@ -255,17 +255,29 @@ async def test_an_unknown_version_lists_the_ones_that_do_exist():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("version", ["../../etc/passwd", "latest", "1.0.0/../..", ""])
+@pytest.mark.parametrize("version", ["../../etc/passwd", "1.0.0/../..", "9 9 9"])
 async def test_a_version_that_is_not_a_version_never_reaches_a_url(version):
     api, session = client(
         {"/api/scripts/": page([version_row(pk=1, script_id=77, name="Two Words")])}
     )
-    if version == "":
-        assert (await api.resolve("Two Words", version)).script_id == 77
-        return
     with pytest.raises(InvalidVersion):
         await api.resolve("Two Words", version)
     assert not any("script_ids" in request for request in session.requests)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", ["", "online", "latest", "LATEST"])
+async def test_the_version_modes_are_not_treated_as_version_numbers(version):
+    """"online" and "latest" select a version rather than naming one.
+
+    They are handled before anything is interpolated into a URL, so the guard above
+    still holds: only something shaped like a version number ever reaches a path.
+    """
+    api, session = client(
+        {"/api/scripts/": page([version_row(pk=1, script_id=77, name="Two Words")])}
+    )
+    assert (await api.resolve("Two Words", version)).script_id == 77
+    assert not any("script_ids/77/" in request for request in session.requests)
 
 
 @pytest.mark.asyncio
@@ -525,3 +537,34 @@ def test_a_one_character_query_is_treated_as_a_custom_id():
 
     assert MIN_SLUG_LENGTH == 1
     assert is_slug("x") is True
+
+
+def test_a_named_version_is_served_even_when_it_is_not_deployed():
+    """Asking for a version by number is explicit, so it is not filtered.
+
+    Serving only what is on the Minecraft server is a default for "just give me the
+    script". Someone who names 1.2.0 has said which one they want, and refusing it for
+    being undeployed would make the parameter useless.
+    """
+    import inspect
+
+    from botcbot.botcscripts import BotcScriptsClient
+
+    source = inspect.getsource(BotcScriptsClient.resolve)
+    # The online check runs only in the online mode, not for latest or a named version.
+    assert "online_wanted = not wanted or folded == \"online\"" in source
+    assert "if online_wanted:" in source
+    named = source.index("fetch_version")
+    guard = source.index("_require_online")
+    assert guard < named, "the online guard must not cover the named-version path"
+
+
+def test_latest_is_selectable_explicitly():
+    import inspect
+
+    from botcbot.botcscripts import BotcScriptsClient
+
+    source = inspect.getsource(BotcScriptsClient.resolve)
+    assert '"latest"' in source
+    # latest skips the online preference when resolving, so it really is the newest.
+    assert "prefer_online=online_wanted" in source

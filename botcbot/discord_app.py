@@ -299,7 +299,10 @@ def _choice(
 )
 @app_commands.describe(
     query="Script name, custom id, or numeric script id",
-    version="Optional version such as 1.0.0 (defaults to the latest)",
+    version=(
+        "online (default), latest, or a number like 1.2.0. A named version is served "
+        "whether or not it is on the server."
+    ),
     output="Who sees the reply. Defaults to public.",
 )
 @app_commands.autocomplete(query=script_query_autocomplete)
@@ -328,7 +331,10 @@ async def script_command(
 )
 @app_commands.describe(
     query="Script name, custom id, or numeric script id",
-    version="Optional version such as 1.0.0 (defaults to the latest)",
+    version=(
+        "online (default), latest, or a number like 1.2.0. A named version is served "
+        "whether or not it is on the server."
+    ),
     output="Who sees the reply. Defaults to private.",
 )
 @app_commands.autocomplete(query=script_query_autocomplete)
