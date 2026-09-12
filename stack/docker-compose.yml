@@ -177,6 +177,7 @@ services:
     environment:
       <<: *app-env
       SYNC_PERIOD: ${SYNC_PERIOD:-3600}
+      SYNC_ON_START: ${SYNC_ON_START:-false}
     volumes:
       - appdata:/data
     networks: [botc]
@@ -187,10 +188,20 @@ services:
         condition: service_completed_successfully
     # SYNC_PERIOD is seconds; 3600 means hourly on the hour. A failure is logged and the
     # loop continues — someone else's server being down should not stop the schedule.
+    #
+    # SYNC_ON_START runs one sync immediately as well. Off by default: the stack gets
+    # restarted repeatedly while it is being set up, and every restart would be another
+    # pass over someone else's server for no new data.
     command: >
       sh -ceu '
         period=$${SYNC_PERIOD:-3600}
         echo "upstream sync every $${period}s, aligned to the period boundary"
+        case "$${SYNC_ON_START:-false}" in
+          1|[Tt]rue|[Yy]es|[Oo]n)
+            echo "SYNC_ON_START is set: syncing now as well"
+            python manage.py sync_upstream || echo "start-up sync failed; the schedule is unaffected"
+            ;;
+        esac
         while true; do
           sleep $$(( period - ($$(date +%s) % period) ))
           python manage.py sync_upstream || echo "sync failed; retrying next period"
