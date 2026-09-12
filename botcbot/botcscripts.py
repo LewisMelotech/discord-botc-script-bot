@@ -100,6 +100,17 @@ class SlugRejected(BotcScriptsError):
     """A custom id was refused: bad shape, a reserved word, or already taken."""
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    """Order versions numerically: 11.0.0 is above 9.0.0, which a string sort reverses."""
+    parts = []
+    for piece in version.split("."):
+        try:
+            parts.append(int(piece))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
 @dataclass(frozen=True, slots=True)
 class ScriptInfo:
     """One ``/api/script_ids/`` row: a script's identity, with no version attached."""
@@ -307,6 +318,53 @@ class BotcScriptsClient:
         if not cleaned or limit <= 0:
             return []
         return (await self._search(cleaned, ordering=None))[:limit]
+
+    async def versions_for(self, query: str, *, limit: int = 25) -> list[ScriptVersion]:
+        """Every version of the script ``query`` names, newest first.
+
+        For the version parameter's suggestions, so someone can pick a version rather
+        than remember its number. Resolution ignores the online preference here: the
+        point of the list is to show what exists, including versions that are not
+        deployed.
+
+        One request when the query is a numeric id, two otherwise — the script has to be
+        identified before its versions can be asked for. Returns [] rather than raising:
+        a failure must cost the user their suggestions, not their command.
+        """
+        cleaned = query.strip()
+        if not cleaned or limit <= 0:
+            return []
+
+        try:
+            if cleaned.isascii() and cleaned.isdigit():
+                script_id: int | None = int(cleaned)
+            else:
+                script = await self._resolve_script(cleaned, prefer_online=False)
+                script_id = script.script_id
+        except BotcScriptsError:
+            return []
+
+        payload = await self._get_json(
+            "/api/scripts/",
+            {
+                "format": "json",
+                "script": str(script_id),
+                "all_scripts": "true",
+            },
+        )
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list):
+            return []
+
+        versions = []
+        for row in results:
+            try:
+                versions.append(ScriptVersion.from_api(row))
+            except UpstreamError:
+                continue
+        # Newest first, by version rather than by whatever order the API returned.
+        versions.sort(key=lambda v: _version_key(v.version), reverse=True)
+        return versions[:limit]
 
     async def fetch_version(self, script_id: int, version: str) -> ScriptVersion:
         """Fetch one specific version of a known script."""

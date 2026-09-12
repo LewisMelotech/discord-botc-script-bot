@@ -243,6 +243,71 @@ async def _suggestions(
     return list(choices.values())[:MAX_CHOICES]
 
 
+# Offered whatever the query is, and always first: they are the two modes, not versions.
+_VERSION_MODES: Final = (
+    ("online", "online — the version on the Minecraft server (default)"),
+    ("latest", "latest — the newest version, deployed or not"),
+)
+
+
+async def script_version_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Suggest the modes, plus the versions the chosen script actually has.
+
+    Nothing in here may raise, for the same reason as the query callback: an exception
+    leaves the client spinning until Discord's deadline instead of simply offering
+    nothing.
+    """
+    try:
+        return await _version_suggestions(interaction, current)
+    except Exception:
+        _LOGGER.warning("Version autocomplete failed for %r.", current, exc_info=True)
+        return [app_commands.Choice(name=label, value=value) for value, label in _VERSION_MODES]
+
+
+async def _version_suggestions(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    text = current.strip().casefold()
+    choices = [
+        app_commands.Choice(name=label[:MAX_CHOICE_NAME], value=value)
+        for value, label in _VERSION_MODES
+        if not text or value.startswith(text)
+    ]
+
+    bot = interaction.client
+    if not isinstance(bot, ScriptBot) or bot.api is None:
+        return choices
+
+    # The query parameter's current value, which is what says whose versions to list.
+    # Empty while someone fills the fields out of order, in which case the modes are all
+    # there is to offer.
+    query = (getattr(interaction.namespace, "query", None) or "").strip()
+    if not query:
+        return choices
+
+    try:
+        async with asyncio.timeout(_LIVE_SEARCH_BUDGET):
+            versions = await bot.api.versions_for(query, limit=MAX_CHOICES)
+    except Exception:
+        # Includes the timeout: whether the instance is slow or broken, the modes are
+        # still worth offering, and suggestions are not worth failing a command over.
+        return choices
+
+    for version in versions:
+        if len(choices) >= MAX_CHOICES:
+            break
+        number = str(version.version)
+        if text and not number.startswith(text):
+            continue
+        mark = " — on the server" if version.status == "online" else ""
+        choices.append(
+            app_commands.Choice(name=f"{number}{mark}"[:MAX_CHOICE_NAME], value=number)
+        )
+    return choices[:MAX_CHOICES]
+
+
 async def _cached_suggestions(
     cache: ScriptCache, text: str, guild_id: int | None
 ) -> list[CachedScript]:
@@ -305,7 +370,7 @@ def _choice(
     ),
     output="Who sees the reply. Defaults to public.",
 )
-@app_commands.autocomplete(query=script_query_autocomplete)
+@app_commands.autocomplete(query=script_query_autocomplete, version=script_version_autocomplete)
 @app_commands.checks.cooldown(_SCRIPT_COOLDOWN_RATE, _SCRIPT_COOLDOWN_PER, key=lambda i: i.user.id)
 async def script_command(
     interaction: discord.Interaction,
@@ -337,7 +402,7 @@ async def script_command(
     ),
     output="Who sees the reply. Defaults to private.",
 )
-@app_commands.autocomplete(query=script_query_autocomplete)
+@app_commands.autocomplete(query=script_query_autocomplete, version=script_version_autocomplete)
 @app_commands.checks.cooldown(_JSON_COOLDOWN_RATE, _JSON_COOLDOWN_PER, key=lambda i: i.user.id)
 async def json_command(
     interaction: discord.Interaction,

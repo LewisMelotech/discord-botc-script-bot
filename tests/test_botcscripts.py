@@ -568,3 +568,58 @@ def test_latest_is_selectable_explicitly():
     assert '"latest"' in source
     # latest skips the online preference when resolving, so it really is the newest.
     assert "prefer_online=online_wanted" in source
+
+
+@pytest.mark.parametrize(
+    "version, expected",
+    [
+        ("1.0.0", (1, 0, 0)),
+        ("11.0.0", (11, 0, 0)),
+        ("9.0.0", (9, 0, 0)),
+        ("1.2", (1, 2)),
+        ("weird", (0,)),
+    ],
+)
+def test_version_ordering_is_numeric(version, expected):
+    """11.0.0 is newer than 9.0.0, which a string sort gets backwards."""
+    from botcbot.botcscripts import _version_key
+
+    assert _version_key(version) == expected
+
+
+def test_versions_sort_newest_first():
+    from botcbot.botcscripts import _version_key
+
+    given = ["1.0.0", "11.0.0", "9.0.0", "1.1.0"]
+    assert sorted(given, key=_version_key, reverse=True) == [
+        "11.0.0",
+        "9.0.0",
+        "1.1.0",
+        "1.0.0",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_versions_for_lists_every_version_of_one_script():
+    rows = [
+        version_row(pk=3, script_id=9, name="Two Words", version="1.0.0"),
+        version_row(pk=4, script_id=9, name="Two Words", version="11.0.0"),
+        version_row(pk=5, script_id=9, name="Two Words", version="9.0.0"),
+    ]
+    api, session = client({"/api/scripts/": page(rows)})
+
+    found = await api.versions_for("9")
+
+    assert [str(v.version) for v in found] == ["11.0.0", "9.0.0", "1.0.0"]
+    # all_scripts is required, or the API returns only the latest one.
+    assert any("all_scripts=true" in request for request in session.requests)
+    # A numeric query needs no resolution step first.
+    assert len(session.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_versions_for_is_empty_rather_than_raising_for_an_unknown_script():
+    api, _session = client({"/api/scripts/": page([])})
+
+    assert await api.versions_for("no such script") == []
+    assert await api.versions_for("") == []
