@@ -473,3 +473,32 @@ def test_offline_is_only_the_explicit_value():
 
     row = {"pk": 1, "script_id": 2, "name": "X", "version": "1.0.0", "status": "offline"}
     assert ScriptVersion.from_api(row).is_offline is True
+
+
+def test_online_only_search_looks_past_the_latest_version():
+    """The deployed version is often not the newest one.
+
+    The API returns only latest versions unless all_scripts is set, so without it an
+    online older version is invisible to search even with status=online.
+    """
+    import inspect
+
+    from botcbot.botcscripts import BotcScriptsClient
+
+    source = inspect.getsource(BotcScriptsClient._search)
+    assert '"status"' in source and '"online"' in source
+    assert '"all_scripts"' in source
+
+
+def test_resolution_prefers_the_online_version():
+    import inspect
+
+    from botcbot.botcscripts import BotcScriptsClient
+
+    source = inspect.getsource(BotcScriptsClient._latest_from_detail)
+    # The online version is tried before falling back to latest_version.
+    assert source.index("_online_version_for") < source.index("latest_version")
+
+    lookup = inspect.getsource(BotcScriptsClient._online_version_for)
+    assert '"script"' in lookup and '"status": "online"' in lookup
+    assert '"all_scripts": "true"' in lookup

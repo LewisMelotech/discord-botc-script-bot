@@ -407,15 +407,46 @@ class BotcScriptsClient:
         )
 
     async def _latest_from_detail(self, detail: Any | None) -> ScriptVersion | None:
-        """Follow a script detail body to its latest version. ``None`` means 404."""
+        """Follow a script detail body to the version to serve. ``None`` means 404.
+
+        Normally that is the latest version. When only online scripts are served it is
+        the online one, which need not be the latest: a newer version can exist here
+        while an older one is what is actually deployed.
+        """
         if detail is None:
             return None
         if not isinstance(detail, dict):
             raise UpstreamError(f"{self._base_url} did not return a script object.")
+        if self._online_only:
+            online = await self._online_version_for(detail.get("pk"))
+            if online is not None:
+                return online
         latest = detail.get("latest_version")
         if not isinstance(latest, str) or not latest:
             return None
         return await self._fetch_version_by_url(latest)
+
+    async def _online_version_for(self, script_id: Any) -> ScriptVersion | None:
+        """The version of this script that is on the server, if any.
+
+        all_scripts=true is needed as well as status=online: the API returns only latest
+        versions by default, and the deployed one is often not the latest.
+        """
+        if not isinstance(script_id, int):
+            return None
+        payload = await self._get_json(
+            "/api/scripts/",
+            {
+                "format": "json",
+                "script": str(script_id),
+                "status": "online",
+                "all_scripts": "true",
+            },
+        )
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list) or not results:
+            return None
+        return ScriptVersion.from_api(results[0])
 
     async def set_slug(self, script_id: int, slug: str | None) -> ScriptInfo:
         """Set a script's custom id, or clear it with ``None``. Needs ``auth``.
@@ -476,8 +507,11 @@ class BotcScriptsClient:
         }
         if self._online_only:
             # Filtered server-side so pagination counts what the caller can actually
-            # have, rather than trimming a page after the fact.
+            # have, rather than trimming a page after the fact. all_scripts is needed
+            # too: the API returns only latest versions by default, and the deployed
+            # version is often an older one.
             params["status"] = "online"
+            params["all_scripts"] = "true"
         if ordering:
             params["ordering"] = ordering
 
