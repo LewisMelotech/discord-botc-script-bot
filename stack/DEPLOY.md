@@ -104,6 +104,11 @@ Check it: `curl -H 'Host: scripts.example.com' http://127.0.0.1:8000/health-chec
 - Import a few scripts — a fresh instance starts empty. See `IMPORTING.md` in the fork.
 - The bot registers slash commands globally, which can take an hour. Set `DISCORD_GUILD_ID`
   for instant registration in one server while you check it works.
+- Optional: point `DISCORD_WEBHOOK_URL` at a channel to be told when a script arrives that
+  might need putting on the Minecraft server. `SITE_URL=https://scripts.example.com` makes
+  the announcements link back. Verify with
+  `docker compose exec botc-scripts python manage.py test_notification`. See
+  `NOTIFICATIONS.md` in the fork.
 
 ## First publish
 

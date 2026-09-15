@@ -411,6 +411,7 @@ botc-scripts/                     the fork, on the custom-slugs branch
 ├── Dockerfile                    uv + Python 3.13, collectstatic at build time
 ├── botc/docker.py                the container settings module
 ├── SLUGS.md                      the slug API contract
+├── NOTIFICATIONS.md              announcing new scripts to a Discord channel
 └── scripts/
     ├── adapters.py               gates local signup without closing login
     ├── management/commands/bootstrap.py    idempotent account creation

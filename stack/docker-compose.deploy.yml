@@ -52,6 +52,13 @@ x-app-env: &app-env
   BANNER: ${BANNER:-}
   IMPORT_SOURCES: ${IMPORT_SOURCES:-https://www.botcscripts.com}
   LOCAL_SIGNUP_ENABLED: ${LOCAL_SIGNUP_ENABLED:-True}
+  # Announcing new scripts and new versions to a Discord channel. Blank means nothing is
+  # announced anywhere, which is the default. SITE_URL is what puts a working link in the
+  # message: the sync container has no request to learn the site's address from, and falls
+  # back to the first CSRF trusted origin. See NOTIFICATIONS.md in the fork.
+  DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+  DISCORD_WEBHOOK_MENTION: ${DISCORD_WEBHOOK_MENTION:-}
+  SITE_URL: ${SITE_URL:-}
   GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
   GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
   # Read only by `manage.py bootstrap`. A blank password skips that account with a
