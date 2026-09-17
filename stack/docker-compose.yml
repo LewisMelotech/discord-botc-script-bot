@@ -31,12 +31,17 @@ x-app-env: &app-env
   DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Copy .env.example to .env and choose one.}
   UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
   BANNER: ${BANNER:-}
-  # Announcing new scripts and new versions to a Discord channel. Blank means nothing is
-  # announced anywhere, which is the default. SITE_URL is what puts a working link in the
-  # message: the sync container has no request to learn the site's address from, and falls
-  # back to the first CSRF trusted origin. See NOTIFICATIONS.md in the fork.
-  DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
-  DISCORD_WEBHOOK_MENTION: ${DISCORD_WEBHOOK_MENTION:-}
+  # Arrivals: new scripts and new versions, announced to a Discord channel. Blank means
+  # none are announced, which is the default. See NOTIFICATIONS.md in the fork.
+  DISCORD_ARRIVALS_WEBHOOK_URL: ${DISCORD_ARRIVALS_WEBHOOK_URL:-}
+  DISCORD_ARRIVALS_WEBHOOK_MENTION: ${DISCORD_ARRIVALS_WEBHOOK_MENTION:-}
+  # A separate webhook for versions being marked as on the Minecraft server, so those can
+  # go to a different channel. Independent of the arrivals pair above; blank switches it off.
+  DISCORD_ONLINE_WEBHOOK_URL: ${DISCORD_ONLINE_WEBHOOK_URL:-}
+  DISCORD_ONLINE_WEBHOOK_MENTION: ${DISCORD_ONLINE_WEBHOOK_MENTION:-}
+  # What puts a working link in either kind of message. The sync container has no request
+  # to learn the site's address from, so it is configured; blank falls back to the first
+  # CSRF trusted origin.
   SITE_URL: ${SITE_URL:-}
   GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
   GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
