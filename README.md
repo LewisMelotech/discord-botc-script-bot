@@ -8,6 +8,9 @@ A Discord bot with slash commands that look up a Blood on the Clocktower script 
 * **`/json`** — the script's **JSON** as a downloadable `.json` file, ready to paste into
   the official app or the Clocktower online tools. **Private by default**, and much
   faster: it never downloads or rasterises the PDF, and usually makes a single request.
+* **`/commands`** — the two **Minecraft commands** that load the script on the server,
+  one per line, ready to paste into the game. **Private by default.** Built from the
+  script's custom id, so a script without one is told to get one.
 * **`/alias`** — server administrators only: give a script a **custom id**, so it can be
   looked up as `sects` rather than `13108`. Needs a self-hosted botc-scripts fork — see
   [Custom ids](#custom-ids).
@@ -22,18 +25,31 @@ A Discord bot with slash commands that look up a Blood on the Clocktower script 
 /json   query:Sects and Violets
 /json   query:13108 output:public
 
+/commands query:sects
+/commands query:Sects and Violets output:public
+
 /alias  set   query:13108 custom_id:sects
 /alias  show  query:Sects and Violets
 /alias  clear query:sects
 ```
 
-`/script` and `/json` take the same parameters:
+`/script` and `/json` take the same parameters, and `/commands` takes all but `version`:
 
 | Parameter | Required | Meaning |
 | --- | --- | --- |
 | `query` | **yes** | A script name (fuzzy-matched), a **custom id**, or a numeric script id. Offers suggestions as you type |
-| `version` | no | A version such as `1.0.0`. Defaults to the latest |
-| `output` | no | `public` (everyone in the channel sees it) or `private` (only you). Defaults to **public** for `/script` and **private** for `/json` |
+| `version` | no | `online` (the default — the version on the Minecraft server), `latest`, or a number such as `1.0.0`. A named version is served whether or not it is on the server |
+| `output` | no | `public` (everyone in the channel sees it) or `private` (only you). Defaults to **public** for `/script` and **private** for `/json` and `/commands` |
+
+`/commands` has no `version` because the commands name the script, not a version — they
+load whichever version is on the server. So it always resolves to the online version,
+and refuses a script that has nothing on the server rather than handing out a command
+that would fail in game. The commands are:
+
+```
+/function botc_nw_lite:roles/<custom id>
+/function botc_nw_lite:scripts/<custom id>
+```
 
 `output` is per-invocation: it overrides that command's default for that one run and
 changes nothing else.

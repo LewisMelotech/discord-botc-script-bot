@@ -33,6 +33,7 @@ from botcbot.discord_app import (
     alias_group,
     alias_set,
     alias_show,
+    commands_command,
     json_command,
     script_command,
     script_query_autocomplete,
@@ -75,7 +76,11 @@ def build_bot(
     session = FakeSession(routes, delay=delay)
     # Through _api_auth rather than around it, so the tests exercise the same decision
     # setup_hook makes about whether this bot may write.
-    bot.api = BotcScriptsClient(session, base_url=base_url, auth=_api_auth(config))
+    # online_only passed through as setup_hook does; without it the parameter above was
+    # silently ignored, and a test asking for online-only behaviour got the opposite.
+    bot.api = BotcScriptsClient(
+        session, base_url=base_url, auth=_api_auth(config), online_only=config.online_only
+    )
     return bot, session
 
 
@@ -761,3 +766,131 @@ def test_a_guild_sync_also_clears_the_global_commands(tmp_path):
     # The global set is emptied and pushed, in that order and after the guild copy.
     assert calls.index("clear_commands(guild=None)") > calls.index("copy_global_to(42)")
     assert calls.index("sync(guild=None)") > calls.index("clear_commands(guild=None)")
+
+
+# --- /commands ------------------------------------------------------------------------------
+
+
+def commands_routes(*, slug: str | None = "sects", status: str | None = None) -> dict:
+    row = version_row(pk=22755, script_id=13108, name="Sects and Violets", slug=slug)
+    if status is not None:
+        row["status"] = status
+    return {"/api/scripts/": page([row])}
+
+
+@pytest.mark.asyncio
+async def test_commands_posts_both_minecraft_commands_on_separate_lines(tmp_path):
+    bot, session = build_bot(tmp_path, commands_routes(slug="sects"))
+    interaction = FakeInteraction(bot, command_name="commands")
+
+    await commands_command.callback(interaction, "Sects and Violets")
+
+    (message,) = interaction.sent
+    assert message.files == []
+    assert "Sects and Violets" in message.content
+    # In a code block: outside one, Discord reads the underscores in botc_nw_lite as
+    # italics and swallows them, and the pasted command would no longer work.
+    assert (
+        "```\n/function botc_nw_lite:roles/sects\n/function botc_nw_lite:scripts/sects\n```"
+        in message.content
+    )
+    # Resolving the script is the only request: no JSON and no PDF are fetched.
+    assert len(session.requests) == 1
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_commands_is_private_unless_asked_to_be_public(tmp_path):
+    bot, _ = build_bot(tmp_path, commands_routes())
+
+    private = FakeInteraction(bot, command_name="commands")
+    await commands_command.callback(private, "Sects and Violets")
+    assert private.response.deferred == {"thinking": True, "ephemeral": True}
+    assert all(message.ephemeral for message in private.sent)
+
+    public = FakeInteraction(bot, command_name="commands")
+    await commands_command.callback(public, "Sects and Violets", output="public")
+    assert public.response.deferred == {"thinking": True, "ephemeral": False}
+    assert not any(message.ephemeral for message in public.sent)
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_commands_explains_a_script_with_no_custom_id(tmp_path):
+    bot, _ = build_bot(tmp_path, commands_routes(slug=None))
+    interaction = FakeInteraction(bot, command_name="commands")
+
+    await commands_command.callback(interaction, "Sects and Violets")
+
+    (message,) = interaction.sent
+    assert "/function" not in message.content
+    assert "`/alias set`" in message.content
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_commands_refuses_a_script_that_is_not_on_the_server(tmp_path):
+    """The command loads whatever is on the server, so for anything else it would fail.
+
+    Addressed by id, because that is the path the bot checks itself: a name search is
+    filtered to online scripts by the instance, which this fake API does not model.
+    """
+    offline = version_row(pk=22755, script_id=13108, name="Sects and Violets", slug="sects")
+    offline["status"] = "offline"
+    routes = {
+        "/api/script_ids/13108/": script_detail(
+            pk=13108, name="Sects and Violets", version_pk=22755, slug="sects"
+        ),
+        "/api/scripts/": page([]),  # nothing of it is online
+        "/api/scripts/22755/": offline,
+    }
+    bot, _ = build_bot(tmp_path, routes, online_only=True)
+    interaction = FakeInteraction(bot, command_name="commands")
+
+    await commands_command.callback(interaction, "13108")
+
+    (message,) = interaction.sent
+    assert "not on the server" in message.content
+    assert "/function" not in message.content
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_commands_feeds_autocomplete_like_the_other_commands(tmp_path):
+    bot, _ = build_bot(tmp_path, commands_routes())
+    interaction = FakeInteraction(bot, command_name="commands", guild_id=42)
+
+    await commands_command.callback(interaction, "Sects and Violets")
+
+    entries = bot.cache.suggest("sects", guild_id=42)
+    assert [(entry.script_id, entry.name) for entry in entries] == [(13108, "Sects and Violets")]
+    bot.cache.close()
+
+
+def test_commands_is_registered_alongside_script_and_json(tmp_path):
+    import asyncio
+
+    added: list[str] = []
+
+    class StubTree:
+        def add_command(self, command, *_args, **_kwargs):
+            added.append(command.name)
+
+        def error(self, handler):
+            return handler
+
+        def copy_global_to(self, *, guild):
+            pass
+
+        def clear_commands(self, *, guild):
+            pass
+
+        async def sync(self, *, guild=None):
+            pass
+
+    bot, _session = build_bot(tmp_path, {})
+    bot.tree = StubTree()
+
+    asyncio.run(bot.setup_hook())
+
+    assert {"script", "json", "commands"} <= set(added)

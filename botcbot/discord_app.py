@@ -40,6 +40,7 @@ from .botcscripts import (
 )
 from .cache import CachedScript, ScriptCache
 from .config import Config
+from .minecraft import commands_for
 from .rendering import RenderError, RenderResult, rasterise
 from .slugs import normalise_slug, slug_problem
 
@@ -68,6 +69,8 @@ _SCRIPT_COOLDOWN_RATE: Final = 2
 _SCRIPT_COOLDOWN_PER: Final = 15.0
 _JSON_COOLDOWN_RATE: Final = 6
 _JSON_COOLDOWN_PER: Final = 15.0
+_COMMANDS_COOLDOWN_RATE: Final = 6
+_COMMANDS_COOLDOWN_PER: Final = 15.0
 _ALIAS_COOLDOWN_RATE: Final = 4
 _ALIAS_COOLDOWN_PER: Final = 30.0
 
@@ -114,6 +117,7 @@ class ScriptBot(discord.Client):
 
         self.tree.add_command(script_command)
         self.tree.add_command(json_command)
+        self.tree.add_command(commands_command)
         # Registered whatever the instance is. /alias show reads custom ids from any
         # instance that has them, and an administrator whose credentials are missing or
         # wrong needs to be told which it is — a command absent from the picker explains
@@ -416,6 +420,36 @@ async def json_command(
         version=version,
         ephemeral=output == "private",
         build=_json_delivery,
+    )
+
+
+@app_commands.command(
+    name="commands",
+    description="Post the Minecraft commands that load a Blood on the Clocktower script",
+)
+@app_commands.describe(
+    query="Script name, custom id, or numeric script id",
+    output="Who sees the reply. Defaults to private.",
+)
+@app_commands.autocomplete(query=script_query_autocomplete)
+@app_commands.checks.cooldown(
+    _COMMANDS_COOLDOWN_RATE, _COMMANDS_COOLDOWN_PER, key=lambda i: i.user.id
+)
+async def commands_command(
+    interaction: discord.Interaction,
+    query: str,
+    output: Literal["public", "private"] = "private",
+) -> None:
+    # No version parameter: the commands name the script, not a version, and load
+    # whichever one is on the server. So the script resolves the way /script does by
+    # default — to the version that is online — and one that is not on the server is
+    # refused rather than handed out a command that would fail in game.
+    await _serve(
+        interaction,
+        query=query,
+        version=None,
+        ephemeral=output == "private",
+        build=_commands_delivery,
     )
 
 
@@ -782,6 +816,26 @@ async def _json_delivery(
         return _Delivery("\n".join(lines), ())
 
     return _Delivery("\n".join(lines), ((script.json_filename, json_bytes),))
+
+
+async def _commands_delivery(
+    bot: ScriptBot, interaction: discord.Interaction, script: ScriptVersion
+) -> _Delivery:
+    """The script's Minecraft commands, one per line. Nothing to fetch beyond the script.
+
+    In a code block rather than as text: the namespace is botc_nw_lite, and Discord would
+    read the underscores around "nw" as italics and eat them.
+    """
+    lines = _title_lines(script, bot.config.base_url)
+    commands = commands_for(script.slug)
+    if not commands:
+        lines.append(
+            "It has no custom id, and the server's commands are named after one. "
+            "An administrator can give it one with `/alias set`."
+        )
+    else:
+        lines.append("```\n" + "\n".join(commands) + "\n```")
+    return _Delivery("\n".join(lines), ())
 
 
 async def _remember(
