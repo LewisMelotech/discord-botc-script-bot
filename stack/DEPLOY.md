@@ -165,6 +165,8 @@ docker compose start botc-scripts bot
 - **Uploads and imports are open to anonymous visitors**, as upstream is. `UPLOAD_DISABLED=True`
   hides the upload form from everyone but staff. Importing is separately limited to the
   instances in `IMPORT_SOURCES`, and nothing rate-limits either form.
-- **Signup is open.** `LOCAL_SIGNUP_ENABLED=False` closes registration while leaving login
-  working, so you can create accounts yourself and hand out reset links (`ACCOUNTS.md`).
+- **Signup is open.** `LOCAL_SIGNUP_ENABLED=False` closes username/password registration
+  and `SOCIAL_SIGNUP_ENABLED=False` closes registration through Discord or Google. Each
+  leaves login working, so you can allow one kind, or neither and create accounts
+  yourself and hand out reset links (`ACCOUNTS.md`).
 - **No email is sent**, so a forgotten password needs an admin-generated reset link.

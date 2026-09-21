@@ -17,9 +17,10 @@ lands — from Discord.
 | `db` | `postgres:17-bookworm` | The only stateful service. | No — internal only. |
 | `init` | `botc-scripts:local` | One-shot, idempotent: migrate → load characters → create accounts. Exits 0. | No |
 | `botc-scripts` | built from `../../botc-scripts` | The Django app under gunicorn. | `127.0.0.1:8000` by default |
+| `sync` | `botc-scripts:local` | The same image, running `manage.py sync_upstream` every `SYNC_PERIOD` seconds — hourly on the hour by default — to pull new versions of scripts that were imported with sync on. It only adds versions, and they arrive offline. See `IMPORTING.md` in the fork. | No |
 | `bot` | built from `..` (this repo) | The Discord bot. | No |
 
-All four sit on a user-defined bridge network called `botc`, which is what gives them
+All five sit on a user-defined bridge network called `botc`, which is what gives them
 service-name DNS. The bot reaches the app at **`http://botc-scripts:8000`** — it never uses
 the published host port, so you can change or remove that port without affecting the bot.
 
@@ -150,8 +151,9 @@ Two details make that chain mean what it says:
 collections.**
 
 The public site at botcscripts.com currently hosts over 11,000 scripts. A self-hosted
-instance starts with none of them, and there is **no built-in import path**. Upstream's own
-README says as much: you will need to upload your own scripts.
+instance starts with none of them. Upstream has no way to copy scripts across, but this
+fork does: it imports them one at a time from the public site or another instance, and can
+keep following them. See `IMPORTING.md` in the fork.
 
 What you do get:
 
@@ -173,11 +175,14 @@ Two consequences worth knowing up front:
   exist, the API's automatic "Hybrid"/"Homebrew" tagging silently does nothing — it catches
   the missing-tag error and moves on. Nothing crashes; the tags just never appear.
 
-To get scripts in, either use the upload form at `/script/upload`, or POST them to the API
-(below). A bulk importer that reads the public API and writes to yours is perfectly feasible
-— roughly 224 pages at 50 scripts each — but it does not exist here, it cannot carry PDFs,
-owners, votes, favourites, comments or tags, and hammering someone else's site for 11,000
-records is a courtesy question worth raising with the upstream maintainer first.
+To get scripts in, use the upload form at `/script/upload`, POST them to the API (below),
+or import them from another instance with `manage.py import_script`, the site's **Import**
+page, or `POST /api/script_ids/import/`. An import carries a script's PDF, but not its tags,
+votes, favourites or comments. There is no bulk import of the public site's 11,000 scripts,
+and hammering someone else's site for that many records is a courtesy question worth
+raising with the upstream maintainer first. The same courtesy applies to what you do
+import: `sync` polls each linked script every hour, and a script costs one request for
+itself plus two for each of its versions.
 
 ### Characters
 
@@ -402,7 +407,7 @@ discord-botc-script-bot/          the bot repo (build context for the bot servic
 ├── Dockerfile                    python:3.13-slim; built in place by Compose
 ├── bot.py, botcbot/, tests/      the bot itself
 └── stack/                        <- you are here
-    ├── docker-compose.yml        the four services, the network and the three volumes
+    ├── docker-compose.yml        the five services, the network and the three volumes
     ├── .env.example              every variable, commented; copy to .env
     ├── README.md                 this file
     └── db/initdb/10-pg_trgm.sql  creates pg_trgm while the data directory initialises

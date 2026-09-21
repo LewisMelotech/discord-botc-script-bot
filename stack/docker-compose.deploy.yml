@@ -51,7 +51,9 @@ x-app-env: &app-env
   UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
   BANNER: ${BANNER:-}
   IMPORT_SOURCES: ${IMPORT_SOURCES:-https://www.botcscripts.com}
+  # Who may register, one switch for each way in; login is unaffected. See ACCOUNTS.md.
   LOCAL_SIGNUP_ENABLED: ${LOCAL_SIGNUP_ENABLED:-True}
+  SOCIAL_SIGNUP_ENABLED: ${SOCIAL_SIGNUP_ENABLED:-True}
   # Arrivals: new scripts and new versions, announced to a Discord channel. Blank means
   # none are announced, which is the default. See NOTIFICATIONS.md in the fork.
   DISCORD_ARRIVALS_WEBHOOK_URL: ${DISCORD_ARRIVALS_WEBHOOK_URL:-}
