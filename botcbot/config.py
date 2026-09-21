@@ -37,6 +37,16 @@ class Config:
     log_level: str
     api_user: str | None = None
     api_password: str | None = None
+    public_url: str | None = None
+
+    @property
+    def link_url(self) -> str:
+        """The address printed in replies for people to click.
+
+        ``base_url`` is where this bot's own requests go, and inside a Docker network that
+        is a service name nobody outside it can resolve. Unset, the two are the same.
+        """
+        return self.public_url or self.base_url
 
     @property
     def can_write(self) -> bool:
@@ -68,6 +78,12 @@ class Config:
         if not base_url.startswith(("http://", "https://")):
             raise ConfigError(
                 f"BOTC_BASE_URL must start with http:// or https:// (got {base_url!r})."
+            )
+
+        public_url = (os.environ.get("BOTC_PUBLIC_URL") or "").strip().rstrip("/") or None
+        if public_url is not None and not public_url.startswith(("http://", "https://")):
+            raise ConfigError(
+                f"BOTC_PUBLIC_URL must start with http:// or https:// (got {public_url!r})."
             )
 
         raw_guild = (os.environ.get("DISCORD_GUILD_ID") or "").strip()
@@ -131,6 +147,7 @@ class Config:
             log_level=log_level,
             api_user=api_user,
             api_password=api_password,
+            public_url=public_url,
         )
 
 

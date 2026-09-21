@@ -55,11 +55,13 @@ def build_bot(
     base_url: str = BASE,
     credentials: tuple[str, str] | None = None,
     online_only: bool = False,
+    public_url: str | None = None,
 ):
     user, password = credentials or (None, None)
     config = Config(
         discord_token="not-used-offline",
         base_url=base_url,
+        public_url=public_url,
         guild_id=None,
         online_only=online_only,
         http_timeout=60.0,
@@ -456,6 +458,67 @@ async def test_a_custom_id_becomes_the_page_link_the_reply_carries(tmp_path):
     await json_command.callback(interaction, "snv")
 
     assert f"<{BASE}/script/snv/1.0.0>" in (interaction.sent[0].content or "")
+    bot.cache.close()
+
+
+# Inside a Docker network the bot reaches the app by a service name, which no Discord
+# user can open. The requests go there; the links people are shown must not.
+INTERNAL = "http://botc-scripts:8000"
+OUTSIDE = "https://scripts.example.org"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "name"),
+    [(script_command, "script"), (json_command, "json"), (commands_command, "commands")],
+)
+async def test_every_command_links_the_public_address_not_the_one_it_calls(
+    tmp_path, command, name
+):
+    bot, session = build_bot(
+        tmp_path, custom_id_routes(pdf=make_pdf(1)), base_url=INTERNAL, public_url=OUTSIDE
+    )
+    interaction = FakeInteraction(bot, command_name=name)
+
+    await command.callback(interaction, "snv")
+
+    content = interaction.sent[0].content or ""
+    assert f"<{OUTSIDE}/script/snv/1.0.0>" in content
+    assert INTERNAL not in content
+    # The other half of the split: nothing about linking changed where requests go.
+    assert session.requests
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_the_full_pdf_link_is_public_too_when_pages_are_left_out(tmp_path):
+    # Ten is the render cap, so an eleventh page is dropped and the reply links the PDF.
+    routes = custom_id_routes(pdf=make_pdf(11))
+    bot, _ = build_bot(tmp_path, routes, base_url=INTERNAL, public_url=OUTSIDE)
+    interaction = FakeInteraction(bot, command_name="script")
+
+    await script_command.callback(interaction, "snv")
+
+    content = interaction.sent[0].content or ""
+    assert f"The full PDF is at <{OUTSIDE}/script/13108/1.0.0/download_pdf>" in content
+    assert INTERNAL not in content
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_a_reply_with_no_pages_still_links_the_public_address(tmp_path):
+    # No PDF route at all, so the reply is the "no pages to show" message.
+    bot, _ = build_bot(
+        tmp_path, custom_id_routes(), base_url=INTERNAL, public_url=OUTSIDE
+    )
+    interaction = FakeInteraction(bot, command_name="script")
+
+    await script_command.callback(interaction, "snv")
+
+    content = interaction.sent[0].content or ""
+    assert "No pages to show" in content
+    assert f"<{OUTSIDE}/script/snv/1.0.0>" in content
+    assert INTERNAL not in content
     bot.cache.close()
 
 

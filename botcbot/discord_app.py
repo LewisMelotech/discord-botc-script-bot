@@ -174,7 +174,12 @@ class ScriptBot(discord.Client):
                 )
 
     async def on_ready(self) -> None:
-        _LOGGER.info("Connected as %s, serving %s.", self.user, self.config.base_url)
+        _LOGGER.info(
+            "Connected as %s, serving %s, linking to %s.",
+            self.user,
+            self.config.base_url,
+            self.config.link_url,
+        )
 
     async def close(self) -> None:
         if self.session is not None and not self.session.closed:
@@ -791,10 +796,10 @@ async def _pdf_delivery(
         problem = str(exc)
 
     if render is None:
-        return _Delivery(_no_pages_message(script, bot.config.base_url, problem), ())
+        return _Delivery(_no_pages_message(script, bot.config.link_url, problem), ())
 
     return _Delivery(
-        _pdf_header(script, bot.config.base_url, render, bot.config.max_pages),
+        _pdf_header(script, bot.config.link_url, render, bot.config.max_pages),
         tuple((page.filename, page.data) for page in render.pages),
     )
 
@@ -805,7 +810,7 @@ async def _json_delivery(
     """One request at most — usually none, since the search row inlines the JSON."""
     json_bytes = await bot.api.fetch_script_json(script)
 
-    lines = _title_lines(script, bot.config.base_url)
+    lines = _title_lines(script, bot.config.link_url)
     per_file_budget, _ = _upload_budgets(interaction)
     if len(json_bytes) > per_file_budget:
         lines.append(
@@ -826,7 +831,7 @@ async def _commands_delivery(
     In a code block rather than as text: the namespace is botc_nw_lite, and Discord would
     read the underscores around "nw" as italics and eat them.
     """
-    lines = _title_lines(script, bot.config.base_url)
+    lines = _title_lines(script, bot.config.link_url)
     commands = commands_for(script.slug)
     if not commands:
         lines.append(
@@ -884,7 +889,7 @@ def _upload_budgets(interaction: discord.Interaction) -> tuple[int, int]:
     return per_file, per_request
 
 
-def _title_lines(script: ScriptVersion, base_url: str) -> list[str]:
+def _title_lines(script: ScriptVersion, link_url: str) -> list[str]:
     details = [f"v{script.version}"]
     if script.script_type:
         details.append(script.script_type)
@@ -892,12 +897,12 @@ def _title_lines(script: ScriptVersion, base_url: str) -> list[str]:
         details.append(f"by {script.author}")
     return [
         f"**{discord.utils.escape_markdown(script.name)}** — {' · '.join(details)}",
-        f"<{script.web_url(base_url)}>",
+        f"<{script.web_url(link_url)}>",
     ]
 
 
-def _pdf_header(script: ScriptVersion, base_url: str, render: RenderResult, max_pages: int) -> str:
-    lines = _title_lines(script, base_url)
+def _pdf_header(script: ScriptVersion, link_url: str, render: RenderResult, max_pages: int) -> str:
+    lines = _title_lines(script, link_url)
     if render.omitted_pages:
         # Pages are only ever dropped for one of two reasons: the upload budget ran out
         # mid-render, or the page cap stopped the loop. Discord's attachment limit is not
@@ -907,7 +912,7 @@ def _pdf_header(script: ScriptVersion, base_url: str, render: RenderResult, max_
             if render.size_limited
             else f"this bot is set to render at most {max_pages} pages"
         )
-        pdf_url = f"{base_url}/script/{script.script_id}/{script.version}/download_pdf"
+        pdf_url = f"{link_url}/script/{script.script_id}/{script.version}/download_pdf"
         lines.append(
             f"-# Showing the first {render.rendered_pages} of {render.total_pages} pages — {why}. "
             f"The full PDF is at <{pdf_url}>"
@@ -915,8 +920,8 @@ def _pdf_header(script: ScriptVersion, base_url: str, render: RenderResult, max_
     return "\n".join(lines)
 
 
-def _no_pages_message(script: ScriptVersion, base_url: str, problem: str | None) -> str:
-    lines = _title_lines(script, base_url)
+def _no_pages_message(script: ScriptVersion, link_url: str, problem: str | None) -> str:
+    lines = _title_lines(script, link_url)
     lines.append(f"-# No pages to show: {problem or 'the PDF could not be rendered'}.")
     lines.append(
         f"-# The script's JSON is unaffected — run `/json query:{script.script_id}` for it."

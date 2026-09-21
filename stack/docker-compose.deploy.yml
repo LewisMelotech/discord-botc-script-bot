@@ -168,6 +168,11 @@ services:
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
       BOTC_BASE_URL: http://botc-scripts:8000
+      # What the bot prints in replies. BOTC_BASE_URL above only resolves inside this
+      # network, so it cannot be the link people click. This reuses the site's own address
+      # (SITE_URL, which announcements use too); left blank it falls back to the internal
+      # one and replies carry links nobody outside the stack can open.
+      BOTC_PUBLIC_URL: ${SITE_URL:-}
       BOTC_CACHE_PATH: /data/botc-suggestions.sqlite3
       BOTC_CACHE_ENTRIES: ${BOTC_CACHE_ENTRIES:-500}
       BOTC_RENDER_DPI: ${BOTC_RENDER_DPI:-150}

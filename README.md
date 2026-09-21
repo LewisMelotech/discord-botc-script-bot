@@ -192,6 +192,7 @@ Then edit `.env`:
 | --- | --- | --- | --- |
 | `DISCORD_TOKEN` | **yes** | — | Bot token from the Developer Portal |
 | `BOTC_BASE_URL` | no | `https://www.botcscripts.com` | The botc-scripts instance to query |
+| `BOTC_PUBLIC_URL` | no | `BOTC_BASE_URL` | The address printed in replies, as the link people click. Set it when the bot reaches the instance by a name its users cannot, such as `http://botc-scripts:8000` inside Docker |
 | `DISCORD_GUILD_ID` | no | — | Register commands to one server, instantly |
 | `BOTC_RENDER_DPI` | no | `150` | Render resolution, 50–400 |
 | `BOTC_MAX_PAGES` | no | `10` | Pages to render, 1–10 |
@@ -278,6 +279,18 @@ Set `BOTC_BASE_URL` to your instance's origin, with no trailing path:
 
 ```bash
 BOTC_BASE_URL=https://scripts.example.com
+```
+
+The bot makes its requests to `BOTC_BASE_URL`, but the links it posts — the page link
+under every reply, and the full-PDF link when pages were left out — are built from
+`BOTC_PUBLIC_URL` when that is set. They are the same address unless the bot reaches your
+instance some way its users cannot: a Docker service name, or a LAN address. Then point
+`BOTC_BASE_URL` at what works from the bot and `BOTC_PUBLIC_URL` at what works from a
+browser:
+
+```bash
+BOTC_BASE_URL=http://botc-scripts:8000
+BOTC_PUBLIC_URL=https://scripts.example.com
 ```
 
 The bot only uses endpoints that a stock botc-scripts deployment exposes anonymously:

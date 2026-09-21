@@ -117,3 +117,41 @@ def test_credentials_over_plain_http_are_flagged_as_cleartext(monkeypatch):
     # Nothing to expose without credentials, so plain http alone is not flagged.
     anonymous = config(monkeypatch, BOTC_BASE_URL="http://botc-scripts:8000")
     assert anonymous.credentials_are_cleartext is False
+
+
+def test_links_use_the_address_the_bot_calls_unless_a_public_one_is_given(monkeypatch):
+    settings = config(monkeypatch, BOTC_BASE_URL="https://scripts.example.com")
+
+    assert settings.public_url is None
+    assert settings.link_url == "https://scripts.example.com"
+
+
+def test_a_public_address_is_what_links_show_and_leaves_the_api_address_alone(monkeypatch):
+    settings = config(
+        monkeypatch,
+        BOTC_BASE_URL="http://botc-scripts:8000",
+        BOTC_PUBLIC_URL="https://scripts.example.com/",
+    )
+
+    # Trailing slash trimmed like BOTC_BASE_URL's, so a link never carries a double one.
+    assert settings.link_url == "https://scripts.example.com"
+    # Requests still go where they always went, and so does every check made on that
+    # address: cleartext credentials are about the connection, not what people are shown.
+    assert settings.base_url == "http://botc-scripts:8000"
+
+
+def test_a_blank_public_address_counts_as_unset(monkeypatch):
+    # What Compose passes when the variable it forwards from (SITE_URL) is empty, which is
+    # the normal state of a stack that never set one.
+    settings = config(
+        monkeypatch, BOTC_BASE_URL="http://botc-scripts:8000", BOTC_PUBLIC_URL="  "
+    )
+
+    assert settings.public_url is None
+    assert settings.link_url == "http://botc-scripts:8000"
+
+
+def test_a_public_address_without_a_scheme_is_refused(monkeypatch):
+    # Discord would post scripts.example.com/script/1/1.0.0 as plain text, not a link.
+    with pytest.raises(ConfigError, match="BOTC_PUBLIC_URL must start with"):
+        config(monkeypatch, BOTC_PUBLIC_URL="scripts.example.com")
