@@ -240,7 +240,10 @@ async def _suggestions(
         choices[entry.script_id] = _choice(entry.script_id, entry.name, entry.author, entry.slug)
 
     if text and bot.api is not None and len(choices) < MAX_CHOICES:
-        for found in await _live_suggestions(bot.api, text):
+        # /alias is about naming a script, not serving it, so it is offered every script:
+        # the ones that most need an id are the ones not on the server yet.
+        every_script = _command_name(interaction).startswith("alias")
+        for found in await _live_suggestions(bot.api, text, every_script=every_script):
             if found.script_id in choices:
                 continue
             choices[found.script_id] = _choice(
@@ -336,10 +339,12 @@ async def _cached_suggestions(
         return []
 
 
-async def _live_suggestions(api: BotcScriptsClient, text: str) -> list[ScriptVersion]:
+async def _live_suggestions(
+    api: BotcScriptsClient, text: str, *, every_script: bool = False
+) -> list[ScriptVersion]:
     try:
         async with asyncio.timeout(_LIVE_SEARCH_BUDGET):
-            return await api.search(text, limit=MAX_CHOICES)
+            return await api.search(text, limit=MAX_CHOICES, prefer_online=not every_script)
     except (TimeoutError, BotcScriptsError) as exc:
         _LOGGER.debug("Live suggestions for %r fell back to the cache: %s", text, exc)
         return []
@@ -594,7 +599,10 @@ async def _serve_alias(
     command = _command_name(interaction)
     try:
         async with asyncio.timeout(_work_budget(interaction)):
-            script = await bot.api.resolve(query)
+            # "latest", not the default: a custom id belongs to the script, and it has to be
+            # given before the script can be deployed, since the Minecraft function is
+            # named after it. The default would refuse a script for being offline.
+            script = await bot.api.resolve(query, "latest")
             message = await act(bot, script)
     except ScriptNotFound as exc:
         message = _not_found_message(exc)

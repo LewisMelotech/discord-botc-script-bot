@@ -307,17 +307,22 @@ class BotcScriptsClient:
                 ),
             )
 
-    async def search(self, query: str, *, limit: int = 25) -> list[ScriptVersion]:
+    async def search(
+        self, query: str, *, limit: int = 25, prefer_online: bool = True
+    ) -> list[ScriptVersion]:
         """Similarity-ranked name matches, for autocomplete suggestions.
 
         Uses the unordered search deliberately: ``ordering`` raises the trigram
         threshold to 0.3, which a half-typed name almost never clears, and replaces the
         similarity ranking that makes the head of this list worth showing.
+
+        ``prefer_online=False`` drops the filter to what is on the server, for a caller
+        whose job is not serving the script, such as /alias.
         """
         cleaned = query.strip()
         if not cleaned or limit <= 0:
             return []
-        return (await self._search(cleaned, ordering=None))[:limit]
+        return (await self._search(cleaned, ordering=None, prefer_online=prefer_online))[:limit]
 
     async def versions_for(self, query: str, *, limit: int = 25) -> list[ScriptVersion]:
         """Every version of the script ``query`` names, newest first.

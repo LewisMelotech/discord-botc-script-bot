@@ -772,6 +772,118 @@ async def test_alias_show_says_how_to_give_a_script_that_has_none_one(tmp_path):
     bot.cache.close()
 
 
+def offline_script_routes(**extra) -> dict:
+    """A script none of whose versions is on the server, addressed by its numeric id.
+
+    By id, because that is the path the bot checks itself; a name search is filtered to
+    online scripts by the instance, which this fake API does not model.
+    """
+    offline = version_row(pk=22755, script_id=13108, name="Sects and Violets")
+    offline["status"] = "offline"
+    return {
+        "/api/script_ids/13108/": script_detail(
+            pk=13108, name="Sects and Violets", version_pk=22755
+        ),
+        "/api/scripts/": page([]),
+        "/api/scripts/22755/": offline,
+        **extra,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "name", "args", "writes", "expected"),
+    [
+        (alias_set, "alias set", ("13108", "sects"), True, "is now `sects`"),
+        (alias_clear, "alias clear", ("13108",), True, "now has no custom id"),
+        (alias_show, "alias show", ("13108",), False, "no custom id"),
+    ],
+)
+async def test_alias_works_on_a_script_that_is_not_on_the_server(
+    tmp_path, command, name, args, writes, expected
+):
+    # The id has to exist before the script can be deployed, because the Minecraft function
+    # is named after it, so /alias must not be held to BOTC_ONLINE_ONLY as /script is.
+    routes = offline_script_routes(
+        **{
+            "PATCH /api/script_ids/13108/slug/": {
+                "pk": 13108,
+                "name": "Sects and Violets",
+                "slug": "sects" if name == "alias set" else None,
+            }
+        }
+    )
+    bot, session = build_bot(tmp_path, routes, credentials=CREDENTIALS, online_only=True)
+    interaction = FakeInteraction(bot, command_name=name, permissions=ADMIN)
+
+    await command.callback(interaction, *args)
+
+    content = interaction.sent[0].content or ""
+    assert expected in content
+    assert "not on the server" not in content
+    assert any(request.startswith("PATCH") for request in session.requests) is writes
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_alias_finds_a_script_by_name_without_the_online_filter(tmp_path):
+    rows = [version_row(pk=22755, script_id=13108, name="Sects and Violets")]
+    routes = {
+        "/api/scripts/": page(rows),
+        "PATCH /api/script_ids/13108/slug/": {
+            "pk": 13108,
+            "name": "Sects and Violets",
+            "slug": "snv",
+        },
+    }
+    bot, session = build_bot(tmp_path, routes, credentials=CREDENTIALS, online_only=True)
+
+    def searches() -> list[str]:
+        return [request for request in session.requests if request.startswith("/api/scripts/?")]
+
+    alias_interaction = FakeInteraction(bot, command_name="alias set", permissions=ADMIN)
+    await alias_set.callback(alias_interaction, "Sects and Violets", "snv")
+    alias_searches = searches()
+    await script_command.callback(FakeInteraction(bot, command_name="script"), "Sects and Violets")
+    script_searches = searches()[len(alias_searches) :]
+
+    # The instance does the filtering, so the request is the whole story: /script asks
+    # for online versions only, and /alias does not.
+    assert alias_searches and not any("status=online" in r for r in alias_searches)
+    assert script_searches and all("status=online" in r for r in script_searches)
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "filtered_to_online"),
+    [
+        ("script", True),
+        ("json", True),
+        ("commands", True),
+        ("alias set", False),
+        ("alias clear", False),
+        ("alias show", False),
+    ],
+)
+async def test_only_the_alias_commands_suggest_scripts_that_are_not_on_the_server(
+    tmp_path, name, filtered_to_online
+):
+    live = page([version_row(pk=9, script_id=900, name="Trouble Abroad")])
+    bot, session = build_bot(tmp_path, {"/api/scripts/": live}, online_only=True)
+    interaction = FakeInteraction(
+        bot, command_name=name, interaction_type=discord.InteractionType.autocomplete
+    )
+
+    choices = await script_query_autocomplete(interaction, "trouble")
+
+    assert [choice.value for choice in choices] == ["900"]
+    searches = [request for request in session.requests if request.startswith("/api/scripts/?")]
+    assert searches
+    assert all("status=online" in request for request in searches) is filtered_to_online
+    bot.cache.close()
+
+
 @pytest.mark.asyncio
 async def test_alias_reuses_the_ambiguous_and_not_found_messages_the_others_use(tmp_path):
     rows = [
