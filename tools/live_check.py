@@ -45,6 +45,7 @@ from botcbot.botcscripts import (  # noqa: E402
     ScriptNotFound,
     UpstreamError,
 )
+from botcbot.config import resolve_selection  # noqa: E402
 from botcbot.rendering import RenderError, rasterise  # noqa: E402
 
 BASE_URL = os.environ.get("BOTC_BASE_URL", "https://www.botcscripts.com").rstrip("/")
@@ -137,6 +138,9 @@ async def main() -> int:
     queries = sys.argv[1:] or DEFAULT_QUERIES
     print(f"base_url:   {BASE_URL}")
     print(f"user-agent: {USER_AGENT}")
+    # The bot's own decision, from the same settings, so this exercises what it would serve.
+    online_only, setting = resolve_selection(BASE_URL)
+    print(f"selection:  {'online' if online_only else 'latest'} (BOTC_SELECTION={setting})")
     print(f"os trust:   {_OS_TRUST}")
     # Reported, never used: this check makes no writes, so it needs no credentials.
     configured = bool(os.environ.get("BOTC_API_USER") and os.environ.get("BOTC_API_PASSWORD"))
@@ -144,7 +148,7 @@ async def main() -> int:
           f"(only /alias uses them; this check is read-only)")
     timeout = aiohttp.ClientTimeout(total=120)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        client = BotcScriptsClient(session, base_url=BASE_URL)
+        client = BotcScriptsClient(session, base_url=BASE_URL, online_only=online_only)
         for query in queries:
             await check(client, query)
 

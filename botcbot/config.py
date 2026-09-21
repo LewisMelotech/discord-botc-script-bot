@@ -100,7 +100,7 @@ class Config:
                 f"BOTC_PUBLIC_URL must start with http:// or https:// (got {public_url!r})."
             )
 
-        online_only, selection_setting = _selection(base_url)
+        online_only, selection_setting = resolve_selection(base_url)
 
         raw_guild = (os.environ.get("DISCORD_GUILD_ID") or "").strip()
         guild_id: int | None = None
@@ -172,7 +172,7 @@ def _is_public_site(base_url: str) -> bool:
     return (urlsplit(base_url).hostname or "").casefold() in _PUBLIC_HOSTS
 
 
-def _selection(base_url: str) -> tuple[bool, str]:
+def resolve_selection(base_url: str) -> tuple[bool, str]:
     """Whether to serve only what is on the server, and the setting that decided it.
 
     ``BOTC_SELECTION`` is ``auto`` (the default), ``online`` or ``latest``. BOTC_ONLINE_ONLY

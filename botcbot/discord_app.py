@@ -1,8 +1,9 @@
-"""The Discord layer: three slash commands wired to the botc-scripts client.
+"""The Discord layer: four slash commands wired to the botc-scripts client.
 
-``/script`` renders a script's PDF to page images; ``/json`` attaches its JSON. They
-share query resolution, the interaction deadline, the error reporting and the
-autocomplete callback, and differ only in what they build and who sees it by default.
+``/script`` renders a script's PDF to page images; ``/json`` attaches its JSON;
+``/commands`` gives the two Minecraft commands that load it. They share query resolution,
+the interaction deadline, the error reporting and the autocomplete callback, and differ
+only in what they build and who sees it by default.
 
 ``/alias`` is the odd one out: an administrators-only group that reads and writes a
 script's custom id. It borrows the same discipline — defer first, fix visibility, bound
@@ -61,10 +62,11 @@ _SIZE_SAFETY: Final = 0.95
 MAX_CHOICES: Final = 25
 MAX_CHOICE_NAME: Final = 100
 
-# Three separate buckets, deliberately. /script downloads and rasterises megabytes,
-# which is the whole reason the limit exists; /json is a single cheap request, sometimes
-# none at all, so throttling it as hard would only be annoying. /alias sits between
-# them: a couple of small requests, but administrators-only and rarely run in bursts.
+# Four separate buckets, deliberately. /script downloads and rasterises megabytes,
+# which is the whole reason the limit exists; /json and /commands are a single cheap
+# request, sometimes none at all, so throttling them as hard would only be annoying.
+# /alias sits between them: a couple of small requests, but administrators-only and
+# rarely run in bursts.
 _SCRIPT_COOLDOWN_RATE: Final = 2
 _SCRIPT_COOLDOWN_PER: Final = 15.0
 _JSON_COOLDOWN_RATE: Final = 6
@@ -944,7 +946,7 @@ def _not_found_message(exc: ScriptNotFound) -> str:
     if exc.suggestions:
         lines.append("Did you mean one of these?")
         lines.extend(_candidate_lines(exc.suggestions))
-    else:
+    elif not exc.explained:
         lines.append("Check the spelling, or pass the numeric script id instead.")
     return "\n".join(lines)
 

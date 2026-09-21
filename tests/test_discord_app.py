@@ -1096,3 +1096,30 @@ async def test_the_version_box_offers_a_scripts_real_versions_on_an_instance_wit
 
     assert [choice.value for choice in choices] == ["online", "latest", "1.1.0", "1.0.0"]
     bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_a_plain_miss_is_told_to_check_the_spelling(tmp_path):
+    bot, _ = build_bot(tmp_path, {"/api/scripts/": page([])})
+    interaction = FakeInteraction(bot, command_name="script")
+
+    await script_command.callback(interaction, "zzzznotascriptzzzz")
+
+    assert "Check the spelling" in (interaction.sent[0].content or "")
+    bot.cache.close()
+
+
+@pytest.mark.asyncio
+async def test_a_script_refused_for_not_being_on_the_server_is_not_told_to_check_its_spelling(
+    tmp_path,
+):
+    # Spelling is not the problem, and the numeric id it suggests would be refused too.
+    bot, _ = build_bot(tmp_path, offline_script_routes(), online_only=True)
+    interaction = FakeInteraction(bot, command_name="script")
+
+    await script_command.callback(interaction, "13108")
+
+    content = interaction.sent[0].content or ""
+    assert "not on the server yet" in content
+    assert "Check the spelling" not in content
+    bot.cache.close()

@@ -267,3 +267,14 @@ def test_auto_and_latest_on_the_public_site_are_quiet(monkeypatch, caplog):
 def test_an_unreadable_selection_setting_is_refused(monkeypatch, env, message):
     with pytest.raises(ConfigError, match=message):
         config(monkeypatch, **env)
+
+
+def test_the_resolver_the_live_check_uses_agrees_with_what_the_bot_loads(monkeypatch):
+    from botcbot.config import resolve_selection
+
+    _isolate(monkeypatch)
+
+    assert resolve_selection(OWN) == (True, "auto")
+    assert resolve_selection(PUBLIC_SITE) == (False, "auto")
+    monkeypatch.setenv("BOTC_SELECTION", "latest")
+    assert resolve_selection(OWN) == (False, "latest")

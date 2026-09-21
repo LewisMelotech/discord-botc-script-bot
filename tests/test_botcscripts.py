@@ -742,3 +742,24 @@ async def test_a_version_the_page_lists_without_a_usable_link_is_skipped():
     versions = await api.versions_for("13108")
 
     assert [v.version for v in versions] == ["1.0.0"]
+
+
+@pytest.mark.asyncio
+async def test_version_suggestions_are_empty_rather_than_an_error_when_the_list_request_fails():
+    # The docstring promises it: a failure costs the user their suggestions, not their command.
+    api, _ = client({"/api/scripts/": (500, b"<h1>Server Error (500)</h1>")})
+
+    assert await api.versions_for("13108") == []
+
+
+@pytest.mark.asyncio
+async def test_version_suggestions_are_empty_when_the_fallback_request_fails_too():
+    routes = {"/api/scripts/": page([]), "/api/script_ids/13108/": (500, b"<h1>Server Error</h1>")}
+    api, _ = client(routes)
+
+    assert await api.versions_for("13108") == []
+
+
+def test_a_not_found_with_its_own_message_says_so_and_a_plain_miss_does_not():
+    assert ScriptNotFound("13108", message="It is not on the server yet.").explained is True
+    assert ScriptNotFound("zzz").explained is False

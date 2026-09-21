@@ -75,6 +75,9 @@ class ScriptNotFound(BotcScriptsError):
         super().__init__(message or f"No script matched {query!r}.")
         self.query = query
         self.suggestions = suggestions or []
+        # A message written for the situation, such as "not on the server yet", already
+        # says what happened; advice about spelling would only be wrong.
+        self.explained = message is not None
 
 
 class AmbiguousScript(BotcScriptsError):
@@ -352,14 +355,17 @@ class BotcScriptsClient:
         except BotcScriptsError:
             return []
 
-        payload = await self._get_json(
-            "/api/scripts/",
-            {
-                "format": "json",
-                "script": str(script_id),
-                "all_scripts": "true",
-            },
-        )
+        try:
+            payload = await self._get_json(
+                "/api/scripts/",
+                {
+                    "format": "json",
+                    "script": str(script_id),
+                    "all_scripts": "true",
+                },
+            )
+        except BotcScriptsError:
+            return []
         results = payload.get("results") if isinstance(payload, dict) else None
 
         versions = []
@@ -372,7 +378,10 @@ class BotcScriptsClient:
             if version.script_id == script_id:
                 versions.append(version)
         if not versions:
-            versions = await self._versions_from_detail(script_id)
+            try:
+                versions = await self._versions_from_detail(script_id)
+            except BotcScriptsError:
+                return []
         # Newest first, by version rather than by whatever order the API returned.
         versions.sort(key=lambda v: _version_key(v.version), reverse=True)
         return versions[:limit]
@@ -659,9 +668,11 @@ class BotcScriptsClient:
         return [ScriptVersion.from_api(row) for row in results]
 
     async def _fetch_version_by_url(self, url: str) -> ScriptVersion:
-        # Upstream hands back absolute URLs built from its own SITE_URL. Reduce them to
-        # the version pk and rebuild against our configured base so a misconfigured or
-        # hostile instance cannot redirect this bot at another host.
+        # Upstream hands back absolute URLs built from the Host header of the request it
+        # was sent (DRF hyperlinks), which behind a proxy or inside a Docker network is not
+        # the address we used. Reduce them to the version pk and rebuild against our
+        # configured base, so a misconfigured or hostile instance cannot redirect this bot
+        # at another host.
         match = _VERSION_PK_RE.search(url)
         if not match:
             raise UpstreamError(f"Could not read a version id out of {url!r}.")
