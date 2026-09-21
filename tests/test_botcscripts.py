@@ -623,3 +623,122 @@ async def test_versions_for_is_empty_rather_than_raising_for_an_unknown_script()
 
     assert await api.versions_for("no such script") == []
     assert await api.versions_for("") == []
+
+
+def online_client(routes: dict) -> BotcScriptsClient:
+    return BotcScriptsClient(FakeSession(routes), base_url=BASE, online_only=True)
+
+
+@pytest.mark.asyncio
+async def test_an_online_lookup_never_serves_a_row_that_belongs_to_another_script():
+    # An instance without the script and status filters, the public site, ignores both and
+    # answers a question about script 13108 with the first row of its whole catalogue. The
+    # fake session ignores query parameters too, so this is that server.
+    stranger = version_row(pk=1, script_id=999, name="Someone Else")
+    api = online_client(
+        {
+            "/api/script_ids/13108/": script_detail(
+                pk=13108, name="Sects and Violets", version_pk=22755
+            ),
+            "/api/scripts/": page([stranger]),
+            "/api/scripts/22755/": version_row(pk=22755, script_id=13108, name="Sects and Violets"),
+        }
+    )
+
+    script = await api.resolve("13108")
+
+    assert (script.script_id, script.name) == (13108, "Sects and Violets")
+
+
+@pytest.mark.asyncio
+async def test_an_online_lookup_still_prefers_the_version_that_is_on_the_server():
+    # The deployed version need not be the newest, so this must keep working: the hardening
+    # above rejects the wrong rows, not the right one.
+    deployed = version_row(pk=22700, script_id=13108, name="Sects and Violets", version="0.9.0")
+    deployed["status"] = "online"
+    newest = version_row(pk=22755, script_id=13108, name="Sects and Violets", version="1.0.0")
+    newest["status"] = "offline"
+    api = online_client(
+        {
+            "/api/script_ids/13108/": script_detail(
+                pk=13108, name="Sects and Violets", version_pk=22755
+            ),
+            "/api/scripts/": page([deployed]),
+            "/api/scripts/22755/": newest,
+        }
+    )
+
+    script = await api.resolve("13108")
+
+    assert script.version == "0.9.0"
+
+
+@pytest.mark.asyncio
+async def test_version_suggestions_keep_only_the_scripts_own_rows():
+    rows = [
+        version_row(pk=1, script_id=13108, name="Sects and Violets", version="1.0.0"),
+        version_row(pk=2, script_id=999, name="Someone Else", version="9.0.0"),
+        version_row(pk=3, script_id=13108, name="Sects and Violets", version="1.1.0"),
+    ]
+    api = BotcScriptsClient(FakeSession({"/api/scripts/": page(rows)}), base_url=BASE)
+
+    versions = await api.versions_for("13108")
+
+    assert [(v.script_id, v.version) for v in versions] == [(13108, "1.1.0"), (13108, "1.0.0")]
+
+
+def stock_versions_routes(**versions: str) -> dict:
+    """What a stock instance gives: unrelated rows for the script filter it ignores, and
+    the script's own page listing the versions it really has."""
+    detail = script_detail(pk=13108, name="Sects and Violets", version_pk=22755)
+    detail["versions"] = {number: f"{BASE}/api/scripts/{pk}/" for number, pk in versions.items()}
+    stranger = version_row(pk=1, script_id=999, name="Someone Else", version="9.0.0")
+    return {"/api/scripts/": page([stranger]), "/api/script_ids/13108/": detail}
+
+
+@pytest.mark.asyncio
+async def test_versions_come_from_the_scripts_own_page_when_the_filter_is_ignored():
+    api, _ = client(stock_versions_routes(**{"1.0.0": "22755", "1.1.0": "22800", "0.9.0": "22700"}))
+
+    versions = await api.versions_for("13108")
+
+    assert [(v.script_id, v.version, v.version_pk) for v in versions] == [
+        (13108, "1.1.0", 22800),
+        (13108, "1.0.0", 22755),
+        (13108, "0.9.0", 22700),
+    ]
+    # Only what the page holds: no server here to say which one is on it.
+    assert {v.name for v in versions} == {"Sects and Violets"}
+    assert {v.status for v in versions} == {None}
+
+
+@pytest.mark.asyncio
+async def test_a_self_hosted_instance_needs_no_extra_request_for_versions():
+    # The filtered list already holds the script's rows, and carries their status, which
+    # the suggestions use to mark the version on the server. Nothing else is asked.
+    online = version_row(pk=22755, script_id=13108, name="Sects and Violets")
+    online["status"] = "online"
+    api, session = client({"/api/scripts/": page([online])})
+
+    versions = await api.versions_for("13108")
+
+    assert [(v.version, v.status) for v in versions] == [("1.0.0", "online")]
+    assert not any("/api/script_ids/" in request for request in session.requests)
+
+
+@pytest.mark.asyncio
+async def test_a_script_with_no_versions_anywhere_gives_no_suggestions():
+    api, _ = client({"/api/scripts/": page([])})  # and no page for it: a 404
+
+    assert await api.versions_for("13108") == []
+
+
+@pytest.mark.asyncio
+async def test_a_version_the_page_lists_without_a_usable_link_is_skipped():
+    routes = stock_versions_routes(**{"1.0.0": "22755"})
+    routes["/api/script_ids/13108/"]["versions"]["9.9.9"] = "not-a-link"
+    api, _ = client(routes)
+
+    versions = await api.versions_for("13108")
+
+    assert [v.version for v in versions] == ["1.0.0"]

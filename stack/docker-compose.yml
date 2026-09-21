@@ -163,10 +163,13 @@ services:
       BOTC_MAX_PAGES: ${BOTC_MAX_PAGES:-10}
       BOTC_HTTP_TIMEOUT: ${BOTC_HTTP_TIMEOUT:-60}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # true serves only scripts marked as on the Minecraft server. An instance with no
-      # status field (the public site) sends none, which counts as available, so this
-      # cannot empty the catalogue there.
-      BOTC_ONLINE_ONLY: ${BOTC_ONLINE_ONLY:-true}
+      # Which version /script, /json and /commands serve when none is asked for. Blank
+      # means auto, which is online in this stack: only scripts marked as on the Minecraft
+      # server. latest serves the newest version of everything. /alias ignores it.
+      BOTC_SELECTION: ${BOTC_SELECTION:-}
+      # The older true/false form of the same choice. Read only while BOTC_SELECTION is
+      # blank, so a stack that still sets it keeps its meaning; blank means unset.
+      BOTC_ONLINE_ONLY: ${BOTC_ONLINE_ONLY:-}
       # Credentials for the slug-write API. The bot ignores them until the /alias command
       # lands; they are passed now so the plumbing is already in place.
       # The bot requires these both-or-neither, so the username must not default to a

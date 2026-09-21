@@ -38,13 +38,14 @@ A Discord bot with slash commands that look up a Blood on the Clocktower script 
 | Parameter | Required | Meaning |
 | --- | --- | --- |
 | `query` | **yes** | A script name (fuzzy-matched), a **custom id**, or a numeric script id. Offers suggestions as you type |
-| `version` | no | `online` (the default — the version on the Minecraft server), `latest`, or a number such as `1.0.0`. A named version is served whether or not it is on the server |
+| `version` | no | `online` (the version on the Minecraft server), `latest`, or a number such as `1.0.0`. Left out, you get whatever [`BOTC_SELECTION`](#configure) says: `online` on your own instance, `latest` on the public site. A named version is served whether or not it is on the server |
 | `output` | no | `public` (everyone in the channel sees it) or `private` (only you). Defaults to **public** for `/script` and **private** for `/json` and `/commands` |
 
 `/commands` has no `version` because the commands name the script, not a version — they
-load whichever version is on the server. So it always resolves to the online version,
-and refuses a script that has nothing on the server rather than handing out a command
-that would fail in game. The commands are:
+load whichever version is on the server. So it resolves to the online version, and — while
+`BOTC_SELECTION` is `online`, which it is on your own instance — refuses a script that has
+nothing on the server rather than handing out a command that would fail in game. The
+commands are:
 
 ```
 /function botc_nw_lite:roles/<custom id>
@@ -123,6 +124,11 @@ instance's to judge — and its refusal is shown to you as it was written.
 
 `query` takes everything `/script` takes: a name, a numeric id, or the current custom id.
 
+* **Not held to `BOTC_SELECTION`.** A custom id has to exist before a script can be put
+  on the server, because the Minecraft function is named after it, so `/alias` finds
+  every script whether or not it is deployed, and its suggestions include the ones that
+  are not. The other commands still serve only what is on the server.
+
 * **Administrators only.** The command is registered with `default_member_permissions`
   of `0`, so Discord hides it from everyone else — but that is a server-side hint a
   server admin can re-grant to a role, so each subcommand also checks `administrator`
@@ -198,6 +204,7 @@ Then edit `.env`:
 | `BOTC_MAX_PAGES` | no | `10` | Pages to render, 1–10 |
 | `BOTC_HTTP_TIMEOUT` | no | `60` | Total seconds per upstream request |
 | `BOTC_MAX_PDF_BYTES` | no | `62914560` | Refuse to download PDFs larger than this |
+| `BOTC_SELECTION` | no | `auto` | Which version `/script`, `/json` and `/commands` serve when none is asked for. `online` serves only scripts marked as on the Minecraft server and refuses the rest, and suggestions leave them out; `latest` serves the newest version of everything; `auto` is `online` on your own instance and `latest` on botcscripts.com, which has no Minecraft server to filter by. **`/alias` ignores it** — see [`/alias`](#alias). `BOTC_ONLINE_ONLY=true` or `false` is the older form of the same choice, and counts only while this is unset |
 | `BOTC_CACHE_PATH` | no | `botc-suggestions.sqlite3` | Where the autocomplete cache lives |
 | `BOTC_CACHE_ENTRIES` | no | `500` | Rows the cache keeps, 0–100000. `0` disables it |
 | `BOTC_API_USER` | no | — | **Self-host only.** User for `/alias set` and `/alias clear` |
@@ -299,6 +306,13 @@ The bot only uses endpoints that a stock botc-scripts deployment exposes anonymo
 * `GET /api/script_ids/<script_pk>/` — the version list for one script
 * `GET /api/scripts/<version_pk>/json/` — the JSON, if `content` was missing
 * `GET /script/<script_pk>/<version>/download_pdf` — the uploaded PDF
+
+The bot also sends two query filters on `/api/scripts/` that only this fork understands:
+`status=online`, with `BOTC_SELECTION=online`, and `script=<id>`, to list a script's
+versions for the `version` box. A stock instance ignores both. The bot checks every row it
+gets back rather than trusting the filter, so it serves the newest version instead of the
+wrong script, and it reads a script's version list from the script's own page
+(`/api/script_ids/<id>/`). That is why `auto` picks `latest` for the public site.
 
 Two more are used only when the instance has [custom ids](#custom-ids), and both are
 optional: an instance without them answers 404, which this bot reads as "no such custom

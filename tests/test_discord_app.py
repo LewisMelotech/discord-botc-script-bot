@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from types import SimpleNamespace
 
 import discord
 import pytest
@@ -37,6 +38,7 @@ from botcbot.discord_app import (
     json_command,
     script_command,
     script_query_autocomplete,
+    script_version_autocomplete,
 )
 
 BASE = "https://example.test"
@@ -1069,3 +1071,28 @@ def test_commands_is_registered_alongside_script_and_json(tmp_path):
     asyncio.run(bot.setup_hook())
 
     assert {"script", "json", "commands"} <= set(added)
+
+
+@pytest.mark.asyncio
+async def test_the_version_box_offers_a_scripts_real_versions_on_an_instance_without_the_filter(
+    tmp_path,
+):
+    # A stock instance ignores the script filter, so the list it returns is unrelated; the
+    # versions must come from the script's own page, or the box offers someone else's.
+    detail = script_detail(pk=13108, name="Sects and Violets", version_pk=22755)
+    detail["versions"] = {
+        "1.0.0": f"{BASE}/api/scripts/22755/",
+        "1.1.0": f"{BASE}/api/scripts/22800/",
+    }
+    stranger = version_row(pk=1, script_id=999, name="Someone Else", version="9.0.0")
+    routes = {"/api/scripts/": page([stranger]), "/api/script_ids/13108/": detail}
+    bot, _ = build_bot(tmp_path, routes)
+    interaction = FakeInteraction(
+        bot, command_name="script", interaction_type=discord.InteractionType.autocomplete
+    )
+    interaction.namespace = SimpleNamespace(query="13108")
+
+    choices = await script_version_autocomplete(interaction, "")
+
+    assert [choice.value for choice in choices] == ["online", "latest", "1.1.0", "1.0.0"]
+    bot.cache.close()

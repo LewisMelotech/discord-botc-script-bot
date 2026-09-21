@@ -175,10 +175,12 @@ class ScriptBot(discord.Client):
 
     async def on_ready(self) -> None:
         _LOGGER.info(
-            "Connected as %s, serving %s, linking to %s.",
+            "Connected as %s, serving %s, linking to %s, selecting %s (BOTC_SELECTION=%s).",
             self.user,
             self.config.base_url,
             self.config.link_url,
+            self.config.selection,
+            self.config.selection_setting,
         )
 
     async def close(self) -> None:

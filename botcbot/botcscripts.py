@@ -333,8 +333,11 @@ class BotcScriptsClient:
         deployed.
 
         One request when the query is a numeric id, two otherwise — the script has to be
-        identified before its versions can be asked for. Returns [] rather than raising:
-        a failure must cost the user their suggestions, not their command.
+        identified before its versions can be asked for. One more when the answer holds
+        none of the script's own rows, which is what an instance without the ``script``
+        filter (the public site) gives: the versions are then read from the script's own
+        page instead, without author or status. Returns [] rather than raising: a failure
+        must cost the user their suggestions, not their command.
         """
         cleaned = query.strip()
         if not cleaned or limit <= 0:
@@ -358,18 +361,50 @@ class BotcScriptsClient:
             },
         )
         results = payload.get("results") if isinstance(payload, dict) else None
-        if not isinstance(results, list):
-            return []
 
         versions = []
-        for row in results:
+        for row in results if isinstance(results, list) else []:
             try:
-                versions.append(ScriptVersion.from_api(row))
+                version = ScriptVersion.from_api(row)
             except UpstreamError:
                 continue
+            # Only this script's own rows: an instance without the script filter ignores it.
+            if version.script_id == script_id:
+                versions.append(version)
+        if not versions:
+            versions = await self._versions_from_detail(script_id)
         # Newest first, by version rather than by whatever order the API returned.
         versions.sort(key=lambda v: _version_key(v.version), reverse=True)
         return versions[:limit]
+
+    async def _versions_from_detail(self, script_id: int) -> list[ScriptVersion]:
+        """A script's versions as its own page lists them, for suggestions only.
+
+        That body maps each version number to a URL and says nothing else, so these carry
+        no author and no status: a suggestion built from one cannot mark the version on
+        the server. Stock instances have no server to mark, so nothing is lost there.
+        """
+        detail = await self._get_json(f"/api/script_ids/{script_id}/", {"format": "json"})
+        if not isinstance(detail, dict) or not isinstance(detail.get("versions"), dict):
+            return []
+        name = _opt_str(detail.get("name")) or f"Script {script_id}"
+        slug = _opt_str(detail.get("slug"))
+
+        found = []
+        for number, url in detail["versions"].items():
+            match = _VERSION_PK_RE.search(url) if isinstance(url, str) else None
+            if match is None:
+                continue
+            found.append(
+                ScriptVersion(
+                    version_pk=int(match.group(1)),
+                    script_id=script_id,
+                    name=name,
+                    version=str(number),
+                    slug=slug,
+                )
+            )
+        return found
 
     async def fetch_version(self, script_id: int, version: str) -> ScriptVersion:
         """Fetch one specific version of a known script."""
@@ -532,9 +567,19 @@ class BotcScriptsClient:
             },
         )
         results = payload.get("results") if isinstance(payload, dict) else None
-        if not isinstance(results, list) or not results:
+        if not isinstance(results, list):
             return None
-        return ScriptVersion.from_api(results[0])
+        # Every row is checked rather than trusted. An instance without the script and
+        # status filters (the public site) ignores both and answers with the first rows of
+        # its whole catalogue, and taking results[0] would serve someone else's script.
+        for row in results:
+            try:
+                found = ScriptVersion.from_api(row)
+            except UpstreamError:
+                continue
+            if found.script_id == script_id and found.status == "online":
+                return found
+        return None
 
     async def set_slug(self, script_id: int, slug: str | None) -> ScriptInfo:
         """Set a script's custom id, or clear it with ``None``. Needs ``auth``.

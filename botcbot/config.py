@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
+
+_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://www.botcscripts.com"
 DEFAULT_CACHE_PATH = "botc-suggestions.sqlite3"
@@ -16,6 +19,10 @@ _LOG_LEVELS = frozenset({"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"})
 # The public site. Custom ids are a self-hosted fork's feature, so pointing at either
 # of these means /alias has nothing to work with, credentials or not.
 _PUBLIC_HOSTS = frozenset({"botcscripts.com", "www.botcscripts.com"})
+
+# What a lookup serves when no version is asked for. "auto" is online everywhere except the
+# public site, which has no Minecraft server and so nothing to filter by.
+_SELECTIONS = ("auto", "online", "latest")
 
 
 class ConfigError(RuntimeError):
@@ -38,6 +45,13 @@ class Config:
     api_user: str | None = None
     api_password: str | None = None
     public_url: str | None = None
+    # BOTC_SELECTION as decided, so the startup log can say what chose the mode.
+    selection_setting: str = "auto"
+
+    @property
+    def selection(self) -> str:
+        """What is served when no version is asked for: ``online`` or ``latest``."""
+        return "online" if self.online_only else "latest"
 
     @property
     def link_url(self) -> str:
@@ -56,7 +70,7 @@ class Config:
     @property
     def is_public_site(self) -> bool:
         """Whether ``base_url`` is botcscripts.com, which has no custom ids at all."""
-        return (urlsplit(self.base_url).hostname or "").casefold() in _PUBLIC_HOSTS
+        return _is_public_site(self.base_url)
 
     @property
     def credentials_are_cleartext(self) -> bool:
@@ -85,6 +99,8 @@ class Config:
             raise ConfigError(
                 f"BOTC_PUBLIC_URL must start with http:// or https:// (got {public_url!r})."
             )
+
+        online_only, selection_setting = _selection(base_url)
 
         raw_guild = (os.environ.get("DISCORD_GUILD_ID") or "").strip()
         guild_id: int | None = None
@@ -143,18 +159,63 @@ class Config:
             # Serve only what is marked as on the Minecraft server. Instances without the
             # status field (the public site) send no status at all, which is treated as
             # visible so this cannot silently empty the catalogue there.
-            online_only=_bool_env("BOTC_ONLINE_ONLY", True),
+            online_only=online_only,
             log_level=log_level,
             api_user=api_user,
             api_password=api_password,
             public_url=public_url,
+            selection_setting=selection_setting,
         )
 
 
-def _bool_env(name: str, default: bool) -> bool:
+def _is_public_site(base_url: str) -> bool:
+    return (urlsplit(base_url).hostname or "").casefold() in _PUBLIC_HOSTS
+
+
+def _selection(base_url: str) -> tuple[bool, str]:
+    """Whether to serve only what is on the server, and the setting that decided it.
+
+    ``BOTC_SELECTION`` is ``auto`` (the default), ``online`` or ``latest``. BOTC_ONLINE_ONLY
+    is the older true/false form of the same choice, and counts only while BOTC_SELECTION
+    is unset, so a stack that still passes it keeps the meaning it had.
+    """
+    raw = (os.environ.get("BOTC_SELECTION") or "").strip().lower()
+    legacy = _optional_bool_env("BOTC_ONLINE_ONLY")
+    public = _is_public_site(base_url)
+
+    if raw and raw not in _SELECTIONS:
+        raise ConfigError(f"BOTC_SELECTION must be one of {list(_SELECTIONS)} (got {raw!r}).")
+
+    if raw:
+        setting = raw
+        if legacy is not None and raw != "auto" and legacy != (raw == "online"):
+            _LOGGER.warning(
+                "BOTC_SELECTION=%s and BOTC_ONLINE_ONLY=%s disagree. BOTC_SELECTION wins; "
+                "remove BOTC_ONLINE_ONLY.",
+                raw,
+                str(legacy).lower(),
+            )
+    elif legacy is not None:
+        setting = "online" if legacy else "latest"
+    else:
+        setting = "auto"
+
+    online_only = (not public) if setting == "auto" else setting == "online"
+    if public and online_only:
+        # Not fatal: the client checks every row it is given, so this degrades to the
+        # newest version rather than serving the wrong script. But it filters nothing.
+        _LOGGER.warning(
+            "Selection is online, but the public site has no Minecraft server status to "
+            "filter by, so it serves the newest version. Use BOTC_SELECTION=latest, or "
+            "leave it as auto."
+        )
+    return online_only, setting
+
+
+def _optional_bool_env(name: str) -> bool | None:
     raw = (os.environ.get(name) or "").strip().lower()
     if not raw:
-        return default
+        return None
     if raw in ("1", "true", "yes", "on"):
         return True
     if raw in ("0", "false", "no", "off"):
