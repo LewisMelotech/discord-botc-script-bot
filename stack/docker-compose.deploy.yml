@@ -45,6 +45,8 @@ x-app-env: &app-env
   BEHIND_TLS_PROXY: ${BEHIND_TLS_PROXY:-False}
   DBHOST: db
   DBPORT: "5432"
+  # Seconds a database connection is reused for; 0 turns persistent connections off.
+  DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
   DBNAME: ${POSTGRES_DB:-botc}
   DBUSER: ${POSTGRES_USER:-botc}
   DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Choose one and put it in .env.}

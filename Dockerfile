@@ -1,7 +1,7 @@
 # The Blood on the Clocktower Discord bot.
 #
-# Built by the Compose stack in ../botc-stack with `context: ../botc-discord-bot`, so this
-# directory stays exactly where it is and is never copied into the stack repo.
+# Built by the Compose stack in stack/ with `context: ..`, so this directory is the build
+# context, and by GitHub Actions for the image the deploy file pulls.
 #
 # python:3.13-slim is enough: pyproject.toml requires >=3.11 and every dependency resolves
 # to a wheel on both arm64 and amd64 — pypdfium2 bundles PDFium, so there are no system

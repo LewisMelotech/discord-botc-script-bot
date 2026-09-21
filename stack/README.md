@@ -5,8 +5,8 @@ Blood on the Clocktower Discord bot, packaged together with Docker Compose.
 
 The point of self-hosting is **custom script slugs**: short, memorable, permanent ids like
 `sects` instead of `13108`. Slugs are a real field on the `Script` model in this fork, so
-they work in the web UI (`/script/sects`), in the API, and — once the `/alias` command
-lands — from Discord.
+they work in the web UI (`/script/sects`), in the API, and from Discord, where an
+administrator sets one with `/alias`.
 
 ---
 
@@ -51,7 +51,7 @@ shared static volume to go stale.
 
   ```sh
   git clone https://github.com/LewisMelotech/discord-botc-script-bot.git
-  git clone https://github.com/LewisMelotech/botc-scripts.git
+  git clone -b custom-slugs https://github.com/LewisMelotech/slug-status.git botc-scripts
   cd discord-botc-script-bot/stack
   ```
 
@@ -246,7 +246,7 @@ Reads are anonymous; writes need Basic auth as the account above.
 | Set a slug | `PATCH /api/script_ids/<pk>/slug/` with `{"slug": "sects"}` |
 | Clear a slug | `PATCH` with `{"slug": null}`, or `DELETE` the same path |
 
-Slugs are lowercase letters, digits and single internal hyphens, 2–50 characters. Input is
+Slugs are lowercase letters, digits and single internal hyphens, 1–50 characters. Input is
 trimmed and case-folded, so `  SECTS  ` is stored as `sects` and `/script/SECTS` resolves.
 Two rules exist to stop slugs colliding with script ids and site URLs: a slug may not parse
 as a number (`13108` is rejected), and may not be a reserved word (`search`, `upload`,

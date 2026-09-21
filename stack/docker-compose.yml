@@ -2,14 +2,16 @@
 #
 #   db            postgres:17-bookworm, the only stateful service
 #   init          one-shot: migrate -> loaddata characters -> bootstrap accounts
-#   botc-scripts  the Django app (this repo's ./botc-scripts fork, with the slug feature)
-#   bot           the Discord bot, from the sibling ../botc-discord-bot checkout
+#   botc-scripts  the Django app, built from the fork checked out beside this repo
+#                 (../../botc-scripts, on the custom-slugs branch)
+#   sync          the same image, pulling new versions of linked scripts on a timer
+#   bot           the Discord bot, built from this repo (..)
 #
 # The bot reaches the app at http://botc-scripts:8000 over the user-defined `botc` bridge
 # network, which is what provides service-name DNS. Nothing but the app publishes a port.
 #
-# Copy .env.example to .env before the first `docker compose up`. SECRET_KEY and DBPASS
-# have no defaults on purpose: the stack refuses to start rather than run on a guessable
+# Copy .env.example to .env before the first `docker compose up`. SECRET_KEY and
+# POSTGRES_PASSWORD have no defaults on purpose: the stack refuses to start rather than run on a guessable
 # secret that someone committed.
 
 name: botc
@@ -26,11 +28,15 @@ x-app-env: &app-env
   BEHIND_TLS_PROXY: ${BEHIND_TLS_PROXY:-False}
   DBHOST: db
   DBPORT: "5432"
+  # Seconds a database connection is reused for; 0 turns persistent connections off.
+  DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
   DBNAME: ${POSTGRES_DB:-botc}
   DBUSER: ${POSTGRES_USER:-botc}
   DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Copy .env.example to .env and choose one.}
   UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
   BANNER: ${BANNER:-}
+  # Instances the import page may pull from. Anyone who can upload can import from these.
+  IMPORT_SOURCES: ${IMPORT_SOURCES:-https://www.botcscripts.com}
   # Who may register, one switch for each way in; login is unaffected. See ACCOUNTS.md.
   LOCAL_SIGNUP_ENABLED: ${LOCAL_SIGNUP_ENABLED:-True}
   SOCIAL_SIGNUP_ENABLED: ${SOCIAL_SIGNUP_ENABLED:-True}
@@ -173,8 +179,8 @@ services:
       # The older true/false form of the same choice. Read only while BOTC_SELECTION is
       # blank, so a stack that still sets it keeps its meaning; blank means unset.
       BOTC_ONLINE_ONLY: ${BOTC_ONLINE_ONLY:-}
-      # Credentials for the slug-write API. The bot ignores them until the /alias command
-      # lands; they are passed now so the plumbing is already in place.
+      # Credentials for the slug-write API. The bot uses them only for /alias set and
+      # /alias clear, and sends every other request anonymously.
       # The bot requires these both-or-neither, so the username must not default to a
       # value while the password is empty: that is half a credential, and the bot exits 2
       # rather than starting up unable to write. :+ makes the username appear only when a

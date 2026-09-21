@@ -57,16 +57,16 @@ in front, since over plain HTTP it locks you out.
 
 ## 3. Let your proxy reach the app
 
-Two arrangements, depending on where your proxy runs.
-
-**Proxy on the host** (nginx or Caddy installed directly): leave `APP_BIND=127.0.0.1` and
-point it at `127.0.0.1:8000`. The port stays closed to the outside.
+The deploy file publishes the app on host port **8480** (`APP_PORT` changes it) on every
+interface (`APP_BIND=0.0.0.0`), because a proxy that is itself a container cannot reach the
+host's loopback. Two arrangements, depending on where your proxy runs.
 
 **Proxy in a container** (Traefik, nginx-proxy-manager, and anything managed by Dockge):
-`127.0.0.1` inside that container is itself, not the host, so loopback will not work. Either
-publish on the Docker bridge with `APP_BIND=0.0.0.0` and forward to the host's IP, or — better
-— put both on one Docker network so it can use the service name. For the latter, add to
-`docker-compose.yml`:
+the default works. Forward to the host's LAN address on `8480`, scheme `http`. Because the
+port is open on every interface, anything that can route to the host can also reach the app
+directly and skip the proxy and its TLS, so firewall the port to the proxy. Or, better, put
+both on one Docker network so the proxy can use the service name: uncomment the `proxy`
+network at the bottom of `docker-compose.deploy.yml`, and add it to the app:
 
 ```yaml
 services:
@@ -79,12 +79,15 @@ networks:
     name: <your proxy's network>
 ```
 
-Then forward to `http://botc-scripts:8000` and drop the published port entirely.
+Then forward to `http://botc-scripts:8000` and drop the `ports:` block entirely.
+
+**Proxy on the host** (nginx or Caddy installed directly): set `APP_BIND=127.0.0.1` and
+point it at `127.0.0.1:8480`. The port stays closed to the outside.
 
 ## 4. Bring it up
 
 ```sh
-docker compose build
+docker compose pull
 docker compose up -d
 docker compose logs -f init
 ```
@@ -95,7 +98,7 @@ then exits 0. It is idempotent, so restarts are safe.
 The `sync` service then pulls new versions of linked scripts every hour, on the hour.
 `SYNC_PERIOD` changes the interval; `docker compose logs sync` shows each run.
 
-Check it: `curl -H 'Host: scripts.example.com' http://127.0.0.1:8000/health-check` → 200.
+Check it: `curl -H 'Host: scripts.example.com' http://127.0.0.1:8480/health-check` → 200.
 
 ## 5. Afterwards
 
@@ -163,8 +166,11 @@ docker compose start botc-scripts bot
 ## Things to decide before opening it up
 
 - **Uploads and imports are open to anonymous visitors**, as upstream is. `UPLOAD_DISABLED=True`
-  hides the upload form from everyone but staff. Importing is separately limited to the
-  instances in `IMPORT_SOURCES`, and nothing rate-limits either form.
+  only greys out the Submit button on the upload page for everyone but staff. It is a
+  courtesy, not a lock: the upload view and the API do not check it, so a hand-made POST
+  still goes through. Importing is separately limited to the instances in `IMPORT_SOURCES`,
+  and nothing rate-limits either form. Adding a version to a script someone owns needs that
+  owner or staff (`ACCOUNTS.md`).
 - **Signup is open.** `LOCAL_SIGNUP_ENABLED=False` closes username/password registration
   and `SOCIAL_SIGNUP_ENABLED=False` closes registration through Discord or Google. Each
   leaves login working, so you can allow one kind, or neither and create accounts

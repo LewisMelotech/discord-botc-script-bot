@@ -1,7 +1,7 @@
 # botc-discord-bot
 
 A Discord bot with slash commands that look up a Blood on the Clocktower script on a
-[botc-scripts](https://github.com/DomBennett/botc-scripts) instance:
+[botc-scripts](https://github.com/AdmiralGT/botc-scripts) instance:
 
 * **`/script`** — the script's PDF **rendered to images**, posted inline so everyone can
   read the script in the channel without downloading anything. **Public by default.**
@@ -68,6 +68,11 @@ order:
    the same server. With no text typed yet, this is simply the recent list.
 2. **A live search of the botc-scripts instance** for anything not already suggested.
 
+The cache remembers what was served, not whether it is still on the server. Under
+`BOTC_SELECTION=online`, a script taken off the server can stay in the first half of the
+list until it ages out; picking it is then refused as not on the server yet. The live half
+leaves such scripts out.
+
 The live search is best-effort, on a budget well inside Discord's 3-second autocomplete
 deadline. If the instance is slow or down, the suggestions quietly fall back to the cached
 ones alone. Suggestions are only ever suggestions: typing a name or id that matches
@@ -104,7 +109,7 @@ autocomplete, and in the page link the bot posts beside a script.
 | Rule | Why |
 | --- | --- |
 | Lowercase letters and digits, separated by single hyphens: `sects-and-violets` | One spelling per id, and safe in both a URL and a filename |
-| 2–50 characters | Anything shorter is not worth typing instead of a number |
+| 1–50 characters | The same range as the fork, which allows a single character |
 | **Never a number.** `13108`, `007`, `-12` and `1_0` are all refused | A query that reads as a number is looked up as a *script id* first, so a numeric custom id would silently resolve to whichever script holds that id — a wrong answer rather than an error, and only once the instance has grown that far |
 | Not a word the site's own URLs use — `search`, `upload`, `api`, `admin` … | The instance reserves them, and refuses them |
 | Unique, case-insensitively | `Sects` and `sects` are the same id, not two |
@@ -204,7 +209,7 @@ Then edit `.env`:
 | `BOTC_MAX_PAGES` | no | `10` | Pages to render, 1–10 |
 | `BOTC_HTTP_TIMEOUT` | no | `60` | Total seconds per upstream request |
 | `BOTC_MAX_PDF_BYTES` | no | `62914560` | Refuse to download PDFs larger than this |
-| `BOTC_SELECTION` | no | `auto` | Which version `/script`, `/json` and `/commands` serve when none is asked for. `online` serves only scripts marked as on the Minecraft server and refuses the rest, and suggestions leave them out; `latest` serves the newest version of everything; `auto` is `online` on your own instance and `latest` on botcscripts.com, which has no Minecraft server to filter by. **`/alias` ignores it** — see [`/alias`](#alias). `BOTC_ONLINE_ONLY=true` or `false` is the older form of the same choice, and counts only while this is unset |
+| `BOTC_SELECTION` | no | `auto` | Which version `/script`, `/json` and `/commands` serve when none is asked for. `online` serves only scripts marked as on the Minecraft server and refuses the rest, and live suggestions leave them out; `latest` serves the newest version of everything; `auto` is `online` on your own instance and `latest` on botcscripts.com, which has no Minecraft server to filter by. **`/alias` ignores it** — see [`/alias`](#alias). `BOTC_ONLINE_ONLY=true` or `false` is the older form of the same choice, and counts only while this is unset |
 | `BOTC_CACHE_PATH` | no | `botc-suggestions.sqlite3` | Where the autocomplete cache lives |
 | `BOTC_CACHE_ENTRIES` | no | `500` | Rows the cache keeps, 0–100000. `0` disables it |
 | `BOTC_API_USER` | no | — | **Self-host only.** User for `/alias set` and `/alias clear` |
@@ -304,6 +309,7 @@ The bot only uses endpoints that a stock botc-scripts deployment exposes anonymo
 
 * `GET /api/scripts/` — fuzzy search, and the script JSON inline in the `content` field
 * `GET /api/script_ids/<script_pk>/` — the version list for one script
+* `GET /api/scripts/<version_pk>/` — one version's row, which a script's page links to
 * `GET /api/scripts/<version_pk>/json/` — the JSON, if `content` was missing
 * `GET /script/<script_pk>/<version>/download_pdf` — the uploaded PDF
 
@@ -354,17 +360,18 @@ These come from Discord, not from this bot:
   caller's Nitro status — no hardcoded guess. The bot keeps 5% headroom, caps a whole
   message at 25 MiB, and if a page still will not fit it switches PNG → JPEG (quality 85,
   70, 55) and then steps the DPI down to a floor of 50.
-* **3-second response deadline / 15-minute follow-up window.** Both commands defer
+* **3-second response deadline / 15-minute follow-up window.** Every command defers
   immediately, which converts the 3-second deadline into a 15-minute budget for the
   download, render and upload.
 * **Autocomplete gets 3 seconds and cannot be deferred.** The callback reads the local
   cache and gives the live search a fraction of a second; on any slowness or failure it
   returns what it has, or nothing, rather than making you wait.
 * **Rate limit.** `/script` allows two invocations per user per 15 seconds, to keep a
-  channel from queueing many multi-megabyte downloads at once. `/json` has its own, laxer
-  bucket of six per 15 seconds, because it downloads nothing. `/alias` has a third, four
-  per 30 seconds: a couple of small requests, but administrators-only and rarely run in
-  bursts. A non-administrator refused by `/alias` spends nothing from its bucket.
+  channel from queueing many multi-megabyte downloads at once. `/json` and `/commands` each
+  have their own, laxer bucket of six per 15 seconds, because neither downloads anything.
+  `/alias` has a fourth, four per 30 seconds: a couple of small requests, but
+  administrators-only and rarely run in bursts. A non-administrator refused by `/alias`
+  spends nothing from its bucket.
 
 ## Layout
 
@@ -375,6 +382,7 @@ botcbot/botcscripts.py    botc-scripts API client — no Discord import, unit-te
 botcbot/rendering.py      blocking PDF rasterisation, run via asyncio.to_thread
 botcbot/cache.py          blocking SQLite suggestion cache, same to_thread discipline
 botcbot/slugs.py          what a custom id may look like, kept in step with the fork
+botcbot/minecraft.py      the two /function commands built from a custom id
 botcbot/discord_app.py    the slash commands, autocomplete and message formatting
 botcbot/tls.py            OS trust store, installed before aiohttp is imported
 tools/live_check.py       exercises the client against a real instance, no token needed
