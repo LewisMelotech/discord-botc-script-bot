@@ -177,13 +177,14 @@ Two consequences worth knowing up front:
 
 To get scripts in, use the upload form at `/script/upload`, POST them to the API (below),
 or import them from another instance with `manage.py import_script`, the site's **Import**
-page, or `POST /api/script_ids/import/`. An import carries a script's PDF, but not its tags,
-votes, favourites or comments. There is no bulk import of the public site's 11,000 scripts,
+page, or `POST /api/script_ids/import/`. An import carries a script's JSON, but not its PDF,
+which botcscripts.com does not permit programs to download, nor its tags, votes, favourites
+or comments. Upload a PDF on the version in the admin if `/script` should show it. There is no bulk import of the public site's 11,000 scripts,
 and hammering someone else's site for that many records is a courtesy question worth
 raising with the upstream maintainer first. The same courtesy applies to what you do
 import: `sync` runs once a day and reads botcscripts.com's list of newest versions down to
-where it stopped last time, usually one request however many scripts are linked, plus a
-PDF for each new version of a linked script. That is what its maintainer asked for after
+where it stopped last time: usually one request however many scripts are linked, and no
+PDFs. That is what its maintainer asked for after
 blocking this instance for looking scripts up one at a time; see `IMPORTING.md` in the fork.
 
 ### Characters
