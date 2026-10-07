@@ -182,9 +182,9 @@ votes, favourites or comments. There is no bulk import of the public site's 11,0
 and hammering someone else's site for that many records is a courtesy question worth
 raising with the upstream maintainer first. The same courtesy applies to what you do
 import: `sync` runs once a day and reads botcscripts.com's list of newest versions down to
-where it stopped last time, usually one request however many scripts are linked, plus a
-PDF for each new version of a linked script. That is what its maintainer asked for after
-blocking this instance for looking scripts up one at a time; see `IMPORTING.md` in the fork.
+where it stopped last time: usually one request however many scripts are linked, and no
+PDFs, which only an import fetches. That is what its maintainer asked for after blocking
+this instance for looking scripts up one at a time; see `IMPORTING.md` in the fork.
 
 ### Characters
 
