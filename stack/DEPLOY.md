@@ -111,7 +111,8 @@ Check it: `curl -H 'Host: scripts.example.com' http://127.0.0.1:8480/health-chec
 - Optional: point `DISCORD_ARRIVALS_WEBHOOK_URL` at a channel to be told when a script
   arrives that might need putting on the Minecraft server, and `DISCORD_ONLINE_WEBHOOK_URL`
   at one to be told when a version goes on it — the same channel or separate ones.
-  `SITE_URL=https://scripts.example.com` makes the announcements link back. Verify every
+  `SITE_URL=https://scripts.example.com` makes the announcements link back, and is the address the bot's
+  replies and a script page's copied JSON link use. Verify every
   configured webhook at once with
   `docker compose exec botc-scripts python manage.py test_notification`. See
   `NOTIFICATIONS.md` in the fork.

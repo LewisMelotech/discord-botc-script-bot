@@ -179,8 +179,9 @@ To get scripts in, use the upload form at `/script/upload`, POST them to the API
 or import them from another instance with `manage.py import_script`, the site's **Import**
 page, or `POST /api/script_ids/import/`. An import carries a script's JSON, but not its PDF,
 which botcscripts.com does not permit programs to download, nor its tags, votes, favourites
-or comments. For `/script` to show it, staff or the script's owner can add the PDF from the
-version's page on the site, with **Upload PDF**. There is no bulk import of the public site's
+or comments. For `/script` to show it, staff, the script's owner or whoever imported it can add
+the PDF from the import page's **PDF** box, or from the version's page on the site with
+**Upload PDF**. There is no bulk import of the public site's
 11,000 scripts, and hammering someone else's site for that many records is a courtesy question worth
 raising with the upstream maintainer first. The same courtesy applies to what you do
 import: `sync` runs once a day and reads botcscripts.com's list of newest versions down to
