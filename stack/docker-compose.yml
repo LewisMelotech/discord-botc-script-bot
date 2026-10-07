@@ -35,8 +35,6 @@ x-app-env: &app-env
   DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Copy .env.example to .env and choose one.}
   UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
   BANNER: ${BANNER:-}
-  # Instances the import page may pull from. Anyone who can upload can import from these.
-  IMPORT_SOURCES: ${IMPORT_SOURCES:-https://www.botcscripts.com}
   # Who may register, one switch for each way in; login is unaffected. See ACCOUNTS.md.
   LOCAL_SIGNUP_ENABLED: ${LOCAL_SIGNUP_ENABLED:-True}
   SOCIAL_SIGNUP_ENABLED: ${SOCIAL_SIGNUP_ENABLED:-True}

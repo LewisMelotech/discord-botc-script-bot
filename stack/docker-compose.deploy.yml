@@ -52,7 +52,6 @@ x-app-env: &app-env
   DBPASS: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Choose one and put it in .env.}
   UPLOAD_DISABLED: ${UPLOAD_DISABLED:-False}
   BANNER: ${BANNER:-}
-  IMPORT_SOURCES: ${IMPORT_SOURCES:-https://www.botcscripts.com}
   # Who may register, one switch for each way in; login is unaffected. See ACCOUNTS.md.
   LOCAL_SIGNUP_ENABLED: ${LOCAL_SIGNUP_ENABLED:-True}
   SOCIAL_SIGNUP_ENABLED: ${SOCIAL_SIGNUP_ENABLED:-True}

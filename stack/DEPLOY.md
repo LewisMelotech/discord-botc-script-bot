@@ -167,11 +167,10 @@ docker compose start botc-scripts bot
 ## Things to decide before opening it up
 
 - **Uploads and imports are open to anonymous visitors**, as upstream is. `UPLOAD_DISABLED=True`
-  only greys out the Submit button on the upload page for everyone but staff. It is a
-  courtesy, not a lock: the upload view and the API do not check it, so a hand-made POST
-  still goes through. Importing is separately limited to the instances in `IMPORT_SOURCES`,
-  and nothing rate-limits either form. Adding a version to a script someone owns needs that
-  owner or staff (`ACCOUNTS.md`).
+  turns both off for everyone but staff, on the site and through the API. Imports only ever
+  come from botcscripts.com, and nothing rate-limits either form: every import is requests
+  to botcscripts.com, which blocks instances that ask too much. Adding a version to a script
+  someone owns needs that owner or staff (`ACCOUNTS.md`).
 - **Signup is open.** `LOCAL_SIGNUP_ENABLED=False` closes username/password registration
   and `SOCIAL_SIGNUP_ENABLED=False` closes registration through Discord or Google. Each
   leaves login working, so you can allow one kind, or neither and create accounts
