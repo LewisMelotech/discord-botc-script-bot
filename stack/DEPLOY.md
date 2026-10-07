@@ -95,8 +95,9 @@ docker compose logs -f init
 `init` runs migrations, loads the 172 characters and creates the admin and bot accounts,
 then exits 0. It is idempotent, so restarts are safe.
 
-The `sync` service then pulls new versions of linked scripts every hour, on the hour.
-`SYNC_PERIOD` changes the interval; `docker compose logs sync` shows each run.
+The `sync` service then pulls new versions of linked scripts once a day at 09:00 UK time.
+`SYNC_AT` and `SYNC_TIMEZONE` change when; `docker compose logs sync` shows each run and
+when the next one is due.
 
 Check it: `curl -H 'Host: scripts.example.com' http://127.0.0.1:8480/health-check` → 200.
 

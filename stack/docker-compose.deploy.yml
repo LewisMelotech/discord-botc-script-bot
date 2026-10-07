@@ -203,17 +203,23 @@ services:
       botc-scripts:
         condition: service_healthy
 
-  # Pulls new versions of linked scripts from wherever they were imported from. Runs on
-  # the hour: it sleeps to the next boundary rather than counting from container start,
-  # so a restart does not shift the schedule. Sync only ever ADDS versions, and new ones
-  # arrive offline, so this never changes what the bot serves without a human marking it.
+  # Pulls new versions of linked scripts from wherever they were imported from. Runs once
+  # a day at SYNC_AT, 09:00 UK time by default: it sleeps until then rather than counting
+  # from container start, so a restart does not shift the schedule. Sync only ever ADDS
+  # versions, and new ones arrive offline, so this never changes what the bot serves
+  # without a human marking it.
   sync:
     image: ${APP_IMAGE:-ghcr.io/lewismelotech/slug-status:latest}
     restart: unless-stopped
     environment:
       <<: *app-env
+      # "-" rather than ":-": SYNC_AT= set empty in .env means "use SYNC_PERIOD instead".
+      SYNC_AT: ${SYNC_AT-09:00}
       SYNC_PERIOD: ${SYNC_PERIOD:-3600}
       SYNC_ON_START: ${SYNC_ON_START:-false}
+      # Only the shell loop below reads this. Django sets its own TZ from TIME_ZONE, so
+      # sync_upstream still works, and stamps last_synced, in UTC.
+      TZ: ${SYNC_TIMEZONE:-Europe/London}
     volumes:
       - appdata:/data
     networks: [botc]
@@ -222,16 +228,25 @@ services:
         condition: service_healthy
       init:
         condition: service_completed_successfully
-    # SYNC_PERIOD is seconds; 3600 means hourly on the hour. A failure is logged and the
-    # loop continues — someone else's server being down should not stop the schedule.
+    # SYNC_AT is a time of day in SYNC_TIMEZONE, and the clock change is handled: 09:00
+    # stays 09:00 in London through BST and GMT. Set SYNC_AT empty to run every
+    # SYNC_PERIOD seconds instead, aligned to the period boundary. A failure is logged and
+    # the loop continues — someone else's server being down should not stop the schedule.
     #
     # SYNC_ON_START runs one sync immediately as well. Off by default: the stack gets
     # restarted repeatedly while it is being set up, and every restart would be another
     # pass over someone else's server for no new data.
     command: >
       sh -ceu '
-        period=$${SYNC_PERIOD:-3600}
-        echo "upstream sync every $${period}s, aligned to the period boundary"
+        if [ -n "$${SYNC_AT}" ]; then
+          # Without zone data, date would quietly use UTC and run an hour out in summer.
+          [ -f "/usr/share/zoneinfo/$${TZ}" ] || { echo "SYNC_TIMEZONE $${TZ} is not a time zone this image knows"; exit 1; }
+          date -d "today $${SYNC_AT}" >/dev/null 2>&1 || { echo "SYNC_AT must be a time of day such as 09:00, not $${SYNC_AT}"; exit 1; }
+          echo "upstream sync daily at $${SYNC_AT} $${TZ}"
+        else
+          period=$${SYNC_PERIOD:-3600}
+          echo "upstream sync every $${period}s, aligned to the period boundary"
+        fi
         case "$${SYNC_ON_START:-false}" in
           1|[Tt]rue|[Yy]es|[Oo]n)
             echo "SYNC_ON_START is set: syncing now as well"
@@ -239,8 +254,16 @@ services:
             ;;
         esac
         while true; do
-          sleep $$(( period - ($$(date +%s) % period) ))
-          python manage.py sync_upstream || echo "sync failed; retrying next period"
+          if [ -n "$${SYNC_AT}" ]; then
+            now=$$(date +%s)
+            next=$$(date -d "today $${SYNC_AT}" +%s)
+            [ "$$next" -gt "$$now" ] || next=$$(date -d "tomorrow $${SYNC_AT}" +%s)
+            echo "next sync at $$(date -d "@$$next" "+%Y-%m-%d %H:%M %Z")"
+            sleep $$(( next - now ))
+          else
+            sleep $$(( period - ($$(date +%s) % period) ))
+          fi
+          python manage.py sync_upstream || echo "sync failed; retrying at the next scheduled time"
         done
       '
 

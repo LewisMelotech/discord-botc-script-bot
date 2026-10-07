@@ -17,7 +17,7 @@ administrator sets one with `/alias`.
 | `db` | `postgres:17-bookworm` | The only stateful service. | No — internal only. |
 | `init` | `botc-scripts:local` | One-shot, idempotent: migrate → load characters → create accounts. Exits 0. | No |
 | `botc-scripts` | built from `../../botc-scripts` | The Django app under gunicorn. | `127.0.0.1:8000` by default |
-| `sync` | `botc-scripts:local` | The same image, running `manage.py sync_upstream` every `SYNC_PERIOD` seconds — hourly on the hour by default — to pull new versions of scripts that were imported with sync on. It only adds versions, and they arrive offline. See `IMPORTING.md` in the fork. | No |
+| `sync` | `botc-scripts:local` | The same image, running `manage.py sync_upstream` once a day at `SYNC_AT` — 09:00 UK time by default — to pull new versions of scripts that were imported with sync on. It only adds versions, and they arrive offline. See `IMPORTING.md` in the fork. | No |
 | `bot` | built from `..` (this repo) | The Discord bot. | No |
 
 All five sit on a user-defined bridge network called `botc`, which is what gives them
@@ -181,8 +181,9 @@ page, or `POST /api/script_ids/import/`. An import carries a script's PDF, but n
 votes, favourites or comments. There is no bulk import of the public site's 11,000 scripts,
 and hammering someone else's site for that many records is a courtesy question worth
 raising with the upstream maintainer first. The same courtesy applies to what you do
-import: `sync` polls each linked script every hour, and a script costs one request for
-itself plus two for each of its versions.
+import: `sync` checks each linked script once a day. A script costs one request when it has
+nothing new, and three when the source has a newer version: the version list, that
+version, and its PDF. botcscripts.com blocks instances that ask it too often.
 
 ### Characters
 
